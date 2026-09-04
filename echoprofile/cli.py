@@ -15,6 +15,20 @@ def _connection_error(config) -> None:
     sys.exit(1)
 
 
+def _fail_on_error(response: httpx.Response, action: str) -> None:
+    """Print the server's actual error detail and exit, instead of letting
+    raise_for_status() surface a bare, undiagnosable 500 traceback.
+    """
+    if response.status_code < 400:
+        return
+    try:
+        detail = response.json().get("detail", response.text)
+    except Exception:
+        detail = response.text
+    print(f"{action} failed ({response.status_code}): {detail}")
+    sys.exit(1)
+
+
 def cmd_login(args: argparse.Namespace) -> None:
     """Ask the running `serve` process to open the persistent Edge profile,
     headed, and keep it open. Log in by hand directly in that window - it
@@ -23,19 +37,29 @@ def cmd_login(args: argparse.Namespace) -> None:
     """
     config = load_config()
     load_switchboard = not args.no_switchboard
+    print("Asking the server to open the persistent profile - this can take ")
+    print("a while on a first/cold launch. Watch for a new browser window.")
     try:
         response = httpx.post(
             f"{config.base_url}/persistent/open",
             json={"load_switchboard": load_switchboard},
-            timeout=30.0,
+            timeout=120.0,
         )
     except httpx.ConnectError:
         _connection_error(config)
         return
+    except httpx.ReadTimeout:
+        print(
+            "No response from the server after 120s. Check the `serve` "
+            "terminal/log - if a browser window did open, it's still open "
+            "and usable even though this command gave up waiting; run "
+            "`echoprofile persistent-status` to confirm once it settles."
+        )
+        sys.exit(1)
     if response.status_code == 409:
         print("Persistent profile is already open.")
         return
-    response.raise_for_status()
+    _fail_on_error(response, "Opening persistent profile")
     print(f"Persistent profile open at {config.profile_dir}")
     if load_switchboard:
         print("Switchboard extension loaded.")
@@ -52,7 +76,7 @@ def cmd_logout(_args: argparse.Namespace) -> None:
     if response.status_code == 409:
         print("Persistent profile is not open.")
         return
-    response.raise_for_status()
+    _fail_on_error(response, "Closing persistent profile")
     print("Persistent profile closed.")
 
 
@@ -60,10 +84,10 @@ def cmd_persistent_status(_args: argparse.Namespace) -> None:
     config = load_config()
     try:
         response = httpx.get(f"{config.base_url}/persistent", timeout=10.0)
-        response.raise_for_status()
     except httpx.ConnectError:
         _connection_error(config)
         return
+    _fail_on_error(response, "Checking persistent status")
     is_open = response.json()["open"]
     print("open" if is_open else "closed")
 
@@ -110,13 +134,7 @@ def cmd_clone(args: argparse.Namespace) -> None:
     except httpx.ConnectError:
         _connection_error(config)
         return
-    if response.status_code >= 400:
-        try:
-            detail = response.json().get("detail", response.text)
-        except Exception:
-            detail = response.text
-        print(f"Clone failed: {detail}")
-        sys.exit(1)
+    _fail_on_error(response, "Clone")
     clone = response.json()
     print(f"Spun up clone {clone['id']} -> {clone['url']}")
 
@@ -128,7 +146,7 @@ def cmd_list(_args: argparse.Namespace) -> None:
     except httpx.ConnectError:
         _connection_error(config)
         return
-    response.raise_for_status()
+    _fail_on_error(response, "Listing clones")
     clones = response.json()
     if not clones:
         print("No active clones.")
@@ -147,7 +165,7 @@ def cmd_close(args: argparse.Namespace) -> None:
     if response.status_code == 404:
         print(f"No clone with id {args.clone_id!r}.")
         sys.exit(1)
-    response.raise_for_status()
+    _fail_on_error(response, "Closing clone")
     print(f"Closed clone {args.clone_id}")
 
 
