@@ -74,11 +74,29 @@ def create_app(config: Config | None = None) -> FastAPI:
 
 def run() -> None:
     import os
+    import sys
 
     import uvicorn
 
     config = load_config()
-    reload = os.environ.get("ECHOPROFILE_NO_RELOAD") is None
+
+    # uvicorn's --reload spawns a worker subprocess whose asyncio event loop
+    # setup doesn't reliably pick up WindowsProactorEventLoopPolicy at any
+    # point we can hook into from our own code - the worker ends up on
+    # SelectorEventLoop, which can't run subprocesses at all, and Playwright
+    # launches its driver as one. So reload defaults off on Windows; set
+    # ECHOPROFILE_FORCE_RELOAD=1 to try it anyway if this gets fixed upstream.
+    if sys.platform == "win32":
+        reload = os.environ.get("ECHOPROFILE_FORCE_RELOAD") is not None
+        if not reload:
+            print(
+                "Hot reload is off by default on Windows - uvicorn's reload "
+                "worker breaks Playwright's subprocess launch there. Set "
+                "ECHOPROFILE_FORCE_RELOAD=1 to override."
+            )
+    else:
+        reload = os.environ.get("ECHOPROFILE_NO_RELOAD") is None
+
     if reload:
         print(
             "Hot reload is on (default) - any file change restarts the server "
@@ -94,4 +112,8 @@ def run() -> None:
             reload=True,
         )
     else:
+        if sys.platform == "win32":
+            import asyncio
+
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
         uvicorn.run(create_app(config), host=config.host, port=config.port)
