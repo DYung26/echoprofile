@@ -37,12 +37,16 @@ def cmd_login(args: argparse.Namespace) -> None:
     """
     config = load_config()
     load_switchboard = not args.no_switchboard
+    load_multica = config.multica_extension_dir is not None
     print("Asking the server to open the persistent profile - this can take ")
     print("a while on a first/cold launch. Watch for a new browser window.")
     try:
         response = httpx.post(
             f"{config.base_url}/persistent/open",
-            json={"load_switchboard": load_switchboard},
+            json={
+                "load_switchboard": load_switchboard,
+                "load_multica": load_multica,
+            },
             timeout=120.0,
         )
     except httpx.ConnectError:
@@ -63,6 +67,8 @@ def cmd_login(args: argparse.Namespace) -> None:
     print(f"Persistent profile open at {config.profile_dir}")
     if load_switchboard:
         print("Switchboard extension loaded.")
+    if load_multica:
+        print("Multica Web Runtime extension loaded.")
     print("Log in as needed in that window. It stays open until `echoprofile logout`.")
 
 
@@ -179,7 +185,7 @@ def main() -> None:
     p_login.add_argument(
         "--no-switchboard",
         action="store_true",
-        help="Skip loading the Switchboard extension (loaded by default)",
+        help="Skip loading the Switchboard extension (Multica Web Runtime remains enabled)",
     )
     p_login.set_defaults(func=cmd_login)
 

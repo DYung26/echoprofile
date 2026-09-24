@@ -21,6 +21,7 @@ MAESTRO_PROFILE_DIR = Path.home() / ".local" / "share" / "maestro" / "browser-pr
 # login state from a storage_state snapshot instead, so they have no use
 # for the extension itself.
 SWITCHBOARD_EXTENSION_DIR = Path.home() / "Projects" / "switchboard" / "dist"
+MULTICA_EXTENSION_DIR = Path.home() / "Projects" / "multica-web-runtime" / "extension" / "dist"
 
 # Playwright `channel` value for launches. None means "use Playwright's
 # bundled Chromium" (no channel= passed at all) - this is what we use by
@@ -41,6 +42,7 @@ class Config:
     default_url: str
     channel: str | None = None
     switchboard_extension_dir: Path | None = None
+    multica_extension_dir: Path | None = None
 
     @property
     def base_url(self) -> str:
@@ -56,6 +58,8 @@ def load_config() -> Config:
     switchboard_extension_dir = Path(
         os.environ.get("ECHOPROFILE_SWITCHBOARD_DIR", SWITCHBOARD_EXTENSION_DIR)
     ).expanduser()
+    multica_dir = os.environ.get("ECHOPROFILE_MULTICA_DIR", str(MULTICA_EXTENSION_DIR))
+    multica_extension_dir = Path(multica_dir).expanduser() if multica_dir else None
     return Config(
         profile_dir=profile_dir,
         host=host,
@@ -63,4 +67,5 @@ def load_config() -> Config:
         default_url=default_url,
         channel=channel,
         switchboard_extension_dir=switchboard_extension_dir,
+        multica_extension_dir=multica_extension_dir,
     )

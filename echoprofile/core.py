@@ -15,6 +15,32 @@ _PROFILE_UNLOCK_TIMEOUT_S = 5.0
 _PROFILE_UNLOCK_POLL_INTERVAL_S = 0.1
 
 
+def _extension_args(
+    config: Config, *, load_switchboard: bool, load_multica: bool
+) -> list[str]:
+    extension_dirs: list[Path] = []
+    if load_switchboard:
+        extension_dirs.append(
+            _require_extension_dir(config.switchboard_extension_dir, "Switchboard")
+        )
+    if load_multica and config.multica_extension_dir is not None:
+        extension_dirs.append(
+            _require_extension_dir(config.multica_extension_dir, "Multica Web Runtime")
+        )
+
+    if not extension_dirs:
+        return []
+
+    paths = ",".join(str(path) for path in extension_dirs)
+    return [f"--disable-extensions-except={paths}", f"--load-extension={paths}"]
+
+
+def _require_extension_dir(extension_dir: Path | None, name: str) -> Path:
+    if extension_dir is None or not extension_dir.is_dir():
+        raise RuntimeError(f"{name} extension not found at {extension_dir}")
+    return extension_dir
+
+
 def _normalize_url(url: str) -> str:
     """Default a bare host/URL with no scheme to https://.
 
@@ -49,6 +75,7 @@ async def launch_persistent_profile(
     *,
     headless: bool = False,
     load_switchboard: bool = False,
+    load_multica: bool = True,
 ) -> tuple[Playwright, BrowserContext]:
     """Launch the one real, on-disk Edge profile for manual login.
 
@@ -56,12 +83,9 @@ async def launch_persistent_profile(
     restarts. Caller owns the returned Playwright/BrowserContext and must
     close both itself.
 
-    load_switchboard loads the Switchboard extension (Manifest V3, so it
-    only works in a persistent context, never in the worker browser or a
-    clone). Switchboard's own service worker only starts headed, so this
-    should be combined with headless=False - a headless launch with
-    load_switchboard=True will load the extension but its service worker
-    won't run.
+    Enabled extensions load only in the persistent context. Their service
+    workers require a headed launch, so extension loading is intended for
+    open_persistent_profile rather than clone or worker-browser launches.
     """
     config.profile_dir.mkdir(parents=True, exist_ok=True)
     await _wait_for_profile_unlocked(config.profile_dir)
@@ -70,19 +94,11 @@ async def launch_persistent_profile(
     ignore_default_args = ["--enable-automation"]
     if not headless:
         args.append("--start-maximized")
-    if load_switchboard:
-        if config.switchboard_extension_dir is None or not config.switchboard_extension_dir.exists():
-            raise RuntimeError(
-                f"Switchboard extension not found at {config.switchboard_extension_dir}"
-            )
-        extension_dir = str(config.switchboard_extension_dir)
-        args += [
-            f"--disable-extensions-except={extension_dir}",
-            f"--load-extension={extension_dir}",
-        ]
-        # Playwright's own default launch args include a blanket
-        # --disable-extensions, which fights --disable-extensions-except
-        # rather than yielding to it, so it has to be dropped explicitly.
+    extension_args = _extension_args(
+        config, load_switchboard=load_switchboard, load_multica=load_multica
+    )
+    if extension_args:
+        args.extend(extension_args)
         ignore_default_args.append("--disable-extensions")
 
     playwright = await async_playwright().start()
@@ -99,7 +115,7 @@ async def launch_persistent_profile(
 
 
 async def open_persistent_profile(
-    config: Config, *, load_switchboard: bool = False
+    config: Config, *, load_switchboard: bool = False, load_multica: bool = True
 ) -> tuple[Playwright, BrowserContext]:
     """Launch the one real, on-disk Edge profile, headed, for the caller to
     keep open and reuse.
@@ -111,7 +127,12 @@ async def open_persistent_profile(
     both returned values and must close/stop them itself (or via
     close_persistent_profile).
     """
-    return await launch_persistent_profile(config, headless=False, load_switchboard=load_switchboard)
+    return await launch_persistent_profile(
+        config,
+        headless=False,
+        load_switchboard=load_switchboard,
+        load_multica=load_multica,
+    )
 
 
 async def close_persistent_profile(playwright: Playwright, context: BrowserContext) -> None:
@@ -216,7 +237,9 @@ class CloneManager:
     def persistent_open(self) -> bool:
         return self._persistent_context is not None
 
-    async def open_persistent(self, *, load_switchboard: bool = False) -> None:
+    async def open_persistent(
+        self, *, load_switchboard: bool = False, load_multica: bool = True
+    ) -> None:
         """Launch the persistent profile headed and keep it open for reuse.
 
         A no-op if already open - call close_persistent() first to relaunch
@@ -226,7 +249,9 @@ class CloneManager:
             if self._persistent_context is not None:
                 return
             playwright, context = await open_persistent_profile(
-                self._config, load_switchboard=load_switchboard
+                self._config,
+                load_switchboard=load_switchboard,
+                load_multica=load_multica,
             )
             self._persistent_playwright = playwright
             self._persistent_context = context

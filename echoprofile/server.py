@@ -15,6 +15,7 @@ class CloneRequest(BaseModel):
 
 class OpenPersistentRequest(BaseModel):
     load_switchboard: bool = False
+    load_multica: bool = True
 
 
 def create_app(config: Config | None = None) -> FastAPI:
@@ -51,7 +52,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     async def open_persistent(request: OpenPersistentRequest):
         if manager.persistent_open:
             raise HTTPException(status_code=409, detail="persistent profile is already open")
-        await manager.open_persistent(load_switchboard=request.load_switchboard)
+        await manager.open_persistent(
+            load_switchboard=request.load_switchboard,
+            load_multica=request.load_multica,
+        )
         return {"open": True}
 
     @app.post("/persistent/close")
