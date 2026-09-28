@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from echoprofile.config import Config, load_config
 from echoprofile.core import CloneManager
@@ -18,6 +18,11 @@ class OpenPersistentRequest(BaseModel):
     load_multica: bool = True
 
 
+class BrowserActionRequest(BaseModel):
+    action: str
+    payload: dict[str, object] = Field(default_factory=dict)
+
+
 def create_app(config: Config | None = None) -> FastAPI:
     config = config or load_config()
     manager = CloneManager(config)
@@ -28,6 +33,15 @@ def create_app(config: Config | None = None) -> FastAPI:
         await manager.close_all()
 
     app = FastAPI(title="echoprofile", lifespan=lifespan)
+
+    @app.post("/browser/action")
+    async def browser_action(request: BrowserActionRequest):
+        try:
+            return await manager.browser_action(request.action, request.payload)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.post("/clone")
     async def clone(request: CloneRequest):

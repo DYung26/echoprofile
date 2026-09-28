@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from playwright.async_api import Browser, BrowserContext, Playwright, async_playwright
 
@@ -265,6 +266,64 @@ class CloneManager:
             self._persistent_context = None
             self._persistent_playwright = None
             return True
+
+    async def browser_action(self, action: str, payload: dict[str, Any]) -> Any:
+        """Execute a browser capability through an extension in the live context.
+
+        The persistent Playwright context remains the only browser owner.
+        Switchboard performs the actual browser-network operation; EchoProfile
+        only bridges the action into the already-running extension.
+        """
+        if action not in {
+            "switchboard.network.list_saved",
+            "switchboard.network.get_saved",
+            "switchboard.network.replay",
+        }:
+            raise ValueError(f"Unsupported browser action: {action}")
+
+        async with self._persistent_lock:
+            context = self._persistent_context
+            if context is None:
+                raise RuntimeError("persistent profile is not open")
+
+            switchboard_worker = None
+            for worker in context.service_workers:
+                try:
+                    is_switchboard = await worker.evaluate(
+                        "() => globalThis.__SWITCHBOARD_EXTENSION__ === true"
+                    )
+                except Exception:
+                    continue
+                if is_switchboard:
+                    switchboard_worker = worker
+                    break
+
+            if switchboard_worker is None:
+                raise RuntimeError("Switchboard extension service worker is not available")
+
+            parsed_worker_url = urlsplit(switchboard_worker.url)
+            extension_origin = f"{parsed_worker_url.scheme}://{parsed_worker_url.netloc}"
+            bridge_page = await context.new_page()
+            try:
+                await bridge_page.goto(
+                    f"{extension_origin}/src/sidepanel/index.html",
+                    wait_until="domcontentloaded",
+                )
+                message_type = {
+                    "switchboard.network.list_saved": "switchboard/network/saved/list",
+                    "switchboard.network.get_saved": "switchboard/network/saved/get",
+                    "switchboard.network.replay": "switchboard/network/replay",
+                }[action]
+                message_payload = dict(payload)
+                if action == "switchboard.network.replay":
+                    message_payload["target"] = "active"
+                return await bridge_page.evaluate(
+                    """async ({type, payload}) =>
+                        await chrome.runtime.sendMessage({type, payload})""",
+                    {"type": message_type, "payload": message_payload},
+                )
+            finally:
+                await bridge_page.close()
 
     async def create_clone(self, url: str | None = None) -> Clone:
         target_url = _normalize_url(url or self._config.default_url)
