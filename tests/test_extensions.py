@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from echoprofile.config import Config, MULTICA_EXTENSION_DIR, load_config
-from echoprofile.core import _extension_args
+from echoprofile.core import _extension_args, _replace_chatgpt_placeholder
 
 
 class ExtensionArgsTests(unittest.TestCase):
@@ -137,6 +137,39 @@ class ExtensionArgsTests(unittest.TestCase):
                     load_switchboard=True,
                     load_multica=True,
                 )
+
+
+class ChatGPTRequestMutationTests(unittest.TestCase):
+    def test_replaces_only_the_last_user_text_part(self) -> None:
+        body = {
+            "messages": [
+                {
+                    "author": {"role": "user"},
+                    "content": {"content_type": "text", "parts": ["old"]},
+                },
+                {
+                    "author": {"role": "assistant"},
+                    "content": {"content_type": "text", "parts": ["answer"]},
+                },
+                {
+                    "author": {"role": "user"},
+                    "content": {"content_type": "text", "parts": ["__PLACEHOLDER__", {"type": "image"}]},
+                },
+            ]
+        }
+
+        _replace_chatgpt_placeholder(body, "__PLACEHOLDER__", "real prompt")
+
+        self.assertEqual(body["messages"][2]["content"]["parts"], ["real prompt", {"type": "image"}])
+        self.assertEqual(body["messages"][0]["content"]["parts"], ["old"])
+
+    def test_missing_placeholder_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "placeholder"):
+            _replace_chatgpt_placeholder(
+                {"messages": [{"author": {"role": "user"}, "content": {"parts": ["other"]}}]},
+                "__PLACEHOLDER__",
+                "real prompt",
+            )
 
 
 if __name__ == "__main__":

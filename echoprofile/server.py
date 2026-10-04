@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from echoprofile.config import Config, load_config
@@ -23,6 +24,11 @@ class BrowserActionRequest(BaseModel):
     payload: dict[str, object] = Field(default_factory=dict)
 
 
+class ChatGPTApiPrepareRequest(BaseModel):
+    placeholder: str
+    replacement: str
+
+
 def create_app(config: Config | None = None) -> FastAPI:
     config = config or load_config()
     manager = CloneManager(config)
@@ -33,6 +39,32 @@ def create_app(config: Config | None = None) -> FastAPI:
         await manager.close_all()
 
     app = FastAPI(title="echoprofile", lifespan=lifespan)
+
+    @app.post("/chatgpt/api/prepare")
+    async def prepare_chatgpt_api(request: ChatGPTApiPrepareRequest):
+        try:
+            return await manager.prepare_chatgpt_api(request.placeholder, request.replacement)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @app.get("/chatgpt/api/stream/{operation_id}")
+    async def stream_chatgpt_api(operation_id: str):
+        if not manager.has_chatgpt_operation(operation_id):
+            raise HTTPException(status_code=404, detail=f"ChatGPT API operation {operation_id!r} not found")
+        try:
+            stream = manager.stream_chatgpt_api(operation_id)
+            return StreamingResponse(
+                stream,
+                media_type="text/event-stream",
+                headers={
+                    "cache-control": "no-cache",
+                    "x-accel-buffering": "no",
+                },
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
 
     @app.post("/browser/action")
     async def browser_action(request: BrowserActionRequest):
