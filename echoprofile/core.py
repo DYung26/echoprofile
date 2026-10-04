@@ -333,6 +333,7 @@ class CloneManager:
         only bridges the action into the already-running extension.
         """
         if action not in {
+            "switchboard.extension.reload",
             "switchboard.network.capture.start",
             "switchboard.network.capture.stop",
             "switchboard.network.list",
@@ -351,6 +352,19 @@ class CloneManager:
             context = self._persistent_context
             if context is None:
                 raise RuntimeError("persistent profile is not open")
+
+            if action == "switchboard.extension.reload":
+                for worker in context.service_workers:
+                    try:
+                        is_switchboard = await worker.evaluate(
+                            "() => globalThis.__SWITCHBOARD_EXTENSION__ === true"
+                        )
+                    except Exception:
+                        continue
+                    if is_switchboard:
+                        await worker.evaluate("() => chrome.runtime.reload()")
+                        return {"reloaded": True}
+                raise RuntimeError("Switchboard extension service worker is not available")
 
             if action == "multica.extension.reload":
                 for worker in context.service_workers:
