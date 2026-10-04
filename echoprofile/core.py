@@ -333,6 +333,11 @@ class CloneManager:
         only bridges the action into the already-running extension.
         """
         if action not in {
+            "switchboard.network.list",
+            "switchboard.network.get",
+            "switchboard.network.save",
+            "switchboard.network.delete",
+            "switchboard.network.fetch",
             "switchboard.network.list_saved",
             "switchboard.network.get_saved",
             "switchboard.network.replay",
@@ -382,6 +387,11 @@ class CloneManager:
                     wait_until="domcontentloaded",
                 )
                 message_type = {
+                    "switchboard.network.list": "switchboard/network/list",
+                    "switchboard.network.get": "switchboard/network/get",
+                    "switchboard.network.save": "switchboard/network/save",
+                    "switchboard.network.delete": "switchboard/network/delete",
+                    "switchboard.network.fetch": "switchboard/network/fetch",
                     "switchboard.network.list_saved": "switchboard/network/saved/list",
                     "switchboard.network.get_saved": "switchboard/network/saved/get",
                     "switchboard.network.replay": "switchboard/network/replay",
