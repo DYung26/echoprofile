@@ -16,7 +16,7 @@ class CloneRequest(BaseModel):
 
 class OpenPersistentRequest(BaseModel):
     load_switchboard: bool = False
-    load_multica: bool = True
+    load_multica: bool = False
 
 
 class BrowserActionRequest(BaseModel):

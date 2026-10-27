@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from echoprofile.config import Config, MULTICA_EXTENSION_DIR, load_config
 from echoprofile.core import _extension_args, _replace_chatgpt_placeholder
+from echoprofile.server import OpenPersistentRequest
 
 
 class DownloadConfigurationTests(unittest.TestCase):
@@ -17,6 +18,19 @@ class DownloadConfigurationTests(unittest.TestCase):
         self.assertIn("accept_downloads=True", source[source.index("launch_persistent_context("):source.index("return playwright, context")])
         clone_context = source.index("context = await browser.new_context(")
         self.assertIn("accept_downloads=True", source[clone_context:source.index("page = await context.new_page()", clone_context)])
+
+
+class PersistentRequestDefaultsTests(unittest.TestCase):
+    def test_extensions_are_opt_in_for_persistent_open(self) -> None:
+        request = OpenPersistentRequest()
+
+        self.assertFalse(request.load_switchboard)
+        self.assertFalse(request.load_multica)
+
+    def test_multica_can_be_explicitly_enabled(self) -> None:
+        request = OpenPersistentRequest(load_multica=True)
+
+        self.assertTrue(request.load_multica)
 
 
 class ExtensionArgsTests(unittest.TestCase):
