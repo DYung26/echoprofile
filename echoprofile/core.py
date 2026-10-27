@@ -152,6 +152,7 @@ async def launch_persistent_profile(
         ignore_default_args=ignore_default_args,
         no_viewport=True,
         color_scheme="dark",
+        accept_downloads=True,
     )
     return playwright, context
 
@@ -615,6 +616,7 @@ class CloneManager:
                 storage_state=storage_state,
                 no_viewport=True,
                 color_scheme="dark",
+                accept_downloads=True,
             )
             page = await context.new_page()
             await page.goto(target_url)

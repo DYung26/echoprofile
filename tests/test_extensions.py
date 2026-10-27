@@ -8,6 +8,17 @@ from echoprofile.config import Config, MULTICA_EXTENSION_DIR, load_config
 from echoprofile.core import _extension_args, _replace_chatgpt_placeholder
 
 
+class DownloadConfigurationTests(unittest.TestCase):
+    def test_downloads_are_explicitly_enabled_for_both_browser_context_types(self) -> None:
+        core_path = Path(__file__).parents[1] / "echoprofile" / "core.py"
+        source = core_path.read_text()
+
+        self.assertEqual(source.count("accept_downloads=True"), 2)
+        self.assertIn("accept_downloads=True", source[source.index("launch_persistent_context("):source.index("return playwright, context")])
+        clone_context = source.index("context = await browser.new_context(")
+        self.assertIn("accept_downloads=True", source[clone_context:source.index("page = await context.new_page()", clone_context)])
+
+
 class ExtensionArgsTests(unittest.TestCase):
     def make_config(self, switchboard: Path, multica: Path | None) -> Config:
         return Config(
