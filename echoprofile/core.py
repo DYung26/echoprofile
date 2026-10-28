@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -133,6 +134,10 @@ async def launch_persistent_profile(
     await _wait_for_profile_unlocked(config.profile_dir)
 
     args = ["--disable-blink-features=AutomationControlled"]
+    # Local CDP for trusted automation clients; keep the endpoint loopback-only.
+    cdp_port = os.environ.get("ECHOPROFILE_CDP_PORT")
+    if cdp_port:
+        args.extend([f"--remote-debugging-port={int(cdp_port)}", "--remote-debugging-address=127.0.0.1"])
     ignore_default_args = ["--enable-automation"]
     if not headless:
         args.append("--start-maximized")
