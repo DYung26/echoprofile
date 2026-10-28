@@ -231,3 +231,21 @@ echoprofile/
   config.py     # paths, port, channel, env overrides
 pyproject.toml
 ```
+
+## Device failover
+
+The CLI selects the first healthy EchoProfile API in priority order: the local
+server, then laptop-ab9612ik, then the VPS. Health checks use GET /health
+with a short timeout and require status=ok. Each command rechecks from the
+top, so a recovered higher-priority host takes precedence again.
+
+Override the ordered endpoint list with comma-separated
+ECHOPROFILE_FAILOVER_URLS, for example:
+
+    ECHOPROFILE_FAILOVER_URLS=http://127.0.0.1:8756,http://100.98.45.0:8756,http://100.82.234.105:8756 echoprofile list
+
+Remote API listeners must bind to their Tailscale IP only, not 0.0.0.0,
+because the API can open and control browser sessions and currently has no
+application-level authentication. A host is eligible only after its service is
+installed, healthy, and reachable over the tailnet. Routing chooses an endpoint
+per CLI command; it does not migrate an already-open browser window or clones.

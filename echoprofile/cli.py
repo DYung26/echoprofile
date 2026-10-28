@@ -7,10 +7,11 @@ import sys
 import httpx
 
 from echoprofile.config import MAESTRO_PROFILE_DIR, load_config
+from echoprofile.routing import resolve_base_url
 
 
 def _connection_error(config) -> None:
-    print(f"Could not reach echoprofile server at {config.base_url}.")
+    print(f"Could not reach echoprofile server at {config.base_url} (and no failover endpoint was healthy).")
     print("Start it first with: echoprofile serve")
     sys.exit(1)
 
@@ -36,13 +37,14 @@ def cmd_login(args: argparse.Namespace) -> None:
     current state fresh. Close it later with `echoprofile logout`.
     """
     config = load_config()
+    base_url = resolve_base_url(config)
     load_switchboard = not args.no_switchboard
     load_multica = config.multica_extension_dir is not None
     print("Asking the server to open the persistent profile - this can take ")
     print("a while on a first/cold launch. Watch for a new browser window.")
     try:
         response = httpx.post(
-            f"{config.base_url}/persistent/open",
+            f"{base_url}/persistent/open",
             json={
                 "load_switchboard": load_switchboard,
                 "load_multica": load_multica,
@@ -74,8 +76,9 @@ def cmd_login(args: argparse.Namespace) -> None:
 
 def cmd_logout(_args: argparse.Namespace) -> None:
     config = load_config()
+    base_url = resolve_base_url(config)
     try:
-        response = httpx.post(f"{config.base_url}/persistent/close", timeout=30.0)
+        response = httpx.post(f"{base_url}/persistent/close", timeout=30.0)
     except httpx.ConnectError:
         _connection_error(config)
         return
@@ -88,8 +91,9 @@ def cmd_logout(_args: argparse.Namespace) -> None:
 
 def cmd_persistent_status(_args: argparse.Namespace) -> None:
     config = load_config()
+    base_url = resolve_base_url(config)
     try:
-        response = httpx.get(f"{config.base_url}/persistent", timeout=10.0)
+        response = httpx.get(f"{base_url}/persistent", timeout=10.0)
     except httpx.ConnectError:
         _connection_error(config)
         return
@@ -135,8 +139,9 @@ def cmd_serve(_args: argparse.Namespace) -> None:
 
 def cmd_clone(args: argparse.Namespace) -> None:
     config = load_config()
+    base_url = resolve_base_url(config)
     try:
-        response = httpx.post(f"{config.base_url}/clone", json={"url": args.url}, timeout=60.0)
+        response = httpx.post(f"{base_url}/clone", json={"url": args.url}, timeout=60.0)
     except httpx.ConnectError:
         _connection_error(config)
         return
@@ -147,8 +152,9 @@ def cmd_clone(args: argparse.Namespace) -> None:
 
 def cmd_list(_args: argparse.Namespace) -> None:
     config = load_config()
+    base_url = resolve_base_url(config)
     try:
-        response = httpx.get(f"{config.base_url}/clones", timeout=10.0)
+        response = httpx.get(f"{base_url}/clones", timeout=10.0)
     except httpx.ConnectError:
         _connection_error(config)
         return
@@ -163,8 +169,9 @@ def cmd_list(_args: argparse.Namespace) -> None:
 
 def cmd_close(args: argparse.Namespace) -> None:
     config = load_config()
+    base_url = resolve_base_url(config)
     try:
-        response = httpx.post(f"{config.base_url}/clones/{args.clone_id}/close", timeout=10.0)
+        response = httpx.post(f"{base_url}/clones/{args.clone_id}/close", timeout=10.0)
     except httpx.ConnectError:
         _connection_error(config)
         return
