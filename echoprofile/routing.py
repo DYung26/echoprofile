@@ -7,9 +7,10 @@ import httpx
 
 from echoprofile.config import Config
 
-_DEFAULT_FALLBACK_URLS = (
-    "http://100.98.45.0:8756",  # laptop-ab9612ik
-    "http://100.82.234.105:8756",  # VPS
+_DEFAULT_FAILOVER_URLS = (
+    "http://100.76.52.7:8756",  # Arch Linux (primary)
+    "http://100.98.45.0:8756",  # laptop-ab9612ik (secondary)
+    "http://100.82.234.105:8756",  # VPS (last resort)
 )
 _HEALTH_TIMEOUT_S = 0.8
 
@@ -19,7 +20,7 @@ def candidate_urls(config: Config, env_value: str | None = None) -> list[str]:
     configured = os.environ.get("ECHOPROFILE_FAILOVER_URLS") if env_value is None else env_value
     values: Iterable[str]
     if configured is None:
-        values = (config.base_url, *_DEFAULT_FALLBACK_URLS)
+        values = _DEFAULT_FAILOVER_URLS
     else:
         values = (item.strip().rstrip("/") for item in configured.split(","))
     result: list[str] = []

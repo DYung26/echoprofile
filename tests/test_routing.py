@@ -21,12 +21,12 @@ class RoutingTests(unittest.TestCase):
             default_url="about:blank",
         )
 
-    def test_default_priority_is_local_then_laptop_then_vps(self) -> None:
+    def test_default_priority_is_arch_then_laptop_then_vps(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(
                 candidate_urls(self.config),
                 [
-                    "http://127.0.0.1:8756",
+                    "http://100.76.52.7:8756",
                     "http://100.98.45.0:8756",
                     "http://100.82.234.105:8756",
                 ],
