@@ -232,20 +232,30 @@ echoprofile/
 pyproject.toml
 ```
 
-## Device failover
+## Device selection and failover
 
-The CLI selects the first healthy EchoProfile API in priority order: the local
-server, then laptop-ab9612ik, then the VPS. Health checks use GET /health
-with a short timeout and require status=ok. Each command rechecks from the
-top, so a recovered higher-priority host takes precedence again.
+Automatic cross-device failover is disabled by default to prevent commands
+from unexpectedly controlling another machine. In `auto` mode, commands use
+the local EchoProfile API unless `ECHOPROFILE_AUTO_FALLBACK=true` is set. When
+enabled, the CLI selects the first healthy endpoint in the configured order.
+You can instead pin commands to one device; a pinned device never silently
+falls back when offline.
 
-Override the ordered endpoint list with comma-separated
-ECHOPROFILE_FAILOVER_URLS, for example:
+    echoprofile device status
+    echoprofile device use laptop
+    echoprofile list
+    echoprofile --device vps list
+    echoprofile device use auto
 
-    ECHOPROFILE_FAILOVER_URLS=http://127.0.0.1:8756,http://100.98.45.0:8756,http://100.82.234.105:8756 echoprofile list
+Known device names are arch, laptop, and vps. The persistent selection is
+stored in ~/.config/echoprofile/device (or $XDG_CONFIG_HOME/echoprofile/device).
+ECHOPROFILE_DEVICE overrides the saved selection; --device overrides both for
+one command. An explicit base URL can also be passed with --device.
 
-Remote API listeners must bind to their Tailscale IP only, not 0.0.0.0,
-because the API can open and control browser sessions and currently has no
-application-level authentication. A host is eligible only after its service is
-installed, healthy, and reachable over the tailnet. Routing chooses an endpoint
-per CLI command; it does not migrate an already-open browser window or clones.
+Enable automatic failover explicitly with `ECHOPROFILE_AUTO_FALLBACK=true`.
+Override its endpoint order with comma-separated `ECHOPROFILE_FAILOVER_URLS`, for example:
+
+    ECHOPROFILE_FAILOVER_URLS=http://127.0.0.1:8756,http://100.76.52.7:8756,http://100.98.45.0:8756,http://100.82.234.105:8756 echoprofile list
+
+Device selection chooses the server receiving a command; it does not migrate
+existing browser windows, cookies, or clones between machines.

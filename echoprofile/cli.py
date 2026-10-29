@@ -7,11 +7,12 @@ import sys
 import httpx
 
 from echoprofile.config import MAESTRO_PROFILE_DIR, load_config
-from echoprofile.routing import resolve_base_url
+from echoprofile.routing import DEVICE_URLS, device_status, resolve_base_url, save_device, selected_device
 
 
-def _connection_error(config) -> None:
-    print(f"Could not reach echoprofile server at {config.base_url} (and no failover endpoint was healthy).")
+def _connection_error(config, base_url: str | None = None) -> None:
+    endpoint = base_url or config.base_url
+    print(f"Could not reach echoprofile server at {endpoint}.")
     print("Start it first with: echoprofile serve")
     sys.exit(1)
 
@@ -37,7 +38,7 @@ def cmd_login(args: argparse.Namespace) -> None:
     current state fresh. Close it later with `echoprofile logout`.
     """
     config = load_config()
-    base_url = resolve_base_url(config)
+    base_url = resolve_base_url(config, getattr(args, 'device', None))
     load_switchboard = not args.no_switchboard
     load_multica = config.multica_extension_dir is not None
     print("Asking the server to open the persistent profile - this can take ")
@@ -51,9 +52,6 @@ def cmd_login(args: argparse.Namespace) -> None:
             },
             timeout=120.0,
         )
-    except httpx.ConnectError:
-        _connection_error(config)
-        return
     except httpx.ReadTimeout:
         print(
             "No response from the server after 120s. Check the `serve` "
@@ -62,6 +60,9 @@ def cmd_login(args: argparse.Namespace) -> None:
             "`echoprofile persistent-status` to confirm once it settles."
         )
         sys.exit(1)
+    except httpx.RequestError:
+        _connection_error(config, base_url)
+        return
     if response.status_code == 409:
         print("Persistent profile is already open.")
         return
@@ -74,13 +75,13 @@ def cmd_login(args: argparse.Namespace) -> None:
     print("Log in as needed in that window. It stays open until `echoprofile logout`.")
 
 
-def cmd_logout(_args: argparse.Namespace) -> None:
+def cmd_logout(args: argparse.Namespace) -> None:
     config = load_config()
-    base_url = resolve_base_url(config)
+    base_url = resolve_base_url(config, getattr(args, 'device', None))
     try:
         response = httpx.post(f"{base_url}/persistent/close", timeout=30.0)
-    except httpx.ConnectError:
-        _connection_error(config)
+    except httpx.RequestError:
+        _connection_error(config, base_url)
         return
     if response.status_code == 409:
         print("Persistent profile is not open.")
@@ -89,13 +90,13 @@ def cmd_logout(_args: argparse.Namespace) -> None:
     print("Persistent profile closed.")
 
 
-def cmd_persistent_status(_args: argparse.Namespace) -> None:
+def cmd_persistent_status(args: argparse.Namespace) -> None:
     config = load_config()
-    base_url = resolve_base_url(config)
+    base_url = resolve_base_url(config, getattr(args, 'device', None))
     try:
         response = httpx.get(f"{base_url}/persistent", timeout=10.0)
-    except httpx.ConnectError:
-        _connection_error(config)
+    except httpx.RequestError:
+        _connection_error(config, base_url)
         return
     _fail_on_error(response, "Checking persistent status")
     is_open = response.json()["open"]
@@ -139,24 +140,24 @@ def cmd_serve(_args: argparse.Namespace) -> None:
 
 def cmd_clone(args: argparse.Namespace) -> None:
     config = load_config()
-    base_url = resolve_base_url(config)
+    base_url = resolve_base_url(config, getattr(args, 'device', None))
     try:
         response = httpx.post(f"{base_url}/clone", json={"url": args.url}, timeout=60.0)
-    except httpx.ConnectError:
-        _connection_error(config)
+    except httpx.RequestError:
+        _connection_error(config, base_url)
         return
     _fail_on_error(response, "Clone")
     clone = response.json()
     print(f"Spun up clone {clone['id']} -> {clone['url']}")
 
 
-def cmd_list(_args: argparse.Namespace) -> None:
+def cmd_list(args: argparse.Namespace) -> None:
     config = load_config()
-    base_url = resolve_base_url(config)
+    base_url = resolve_base_url(config, getattr(args, 'device', None))
     try:
         response = httpx.get(f"{base_url}/clones", timeout=10.0)
-    except httpx.ConnectError:
-        _connection_error(config)
+    except httpx.RequestError:
+        _connection_error(config, base_url)
         return
     _fail_on_error(response, "Listing clones")
     clones = response.json()
@@ -169,11 +170,11 @@ def cmd_list(_args: argparse.Namespace) -> None:
 
 def cmd_close(args: argparse.Namespace) -> None:
     config = load_config()
-    base_url = resolve_base_url(config)
+    base_url = resolve_base_url(config, getattr(args, 'device', None))
     try:
         response = httpx.post(f"{base_url}/clones/{args.clone_id}/close", timeout=10.0)
-    except httpx.ConnectError:
-        _connection_error(config)
+    except httpx.RequestError:
+        _connection_error(config, base_url)
         return
     if response.status_code == 404:
         print(f"No clone with id {args.clone_id!r}.")
@@ -182,9 +183,39 @@ def cmd_close(args: argparse.Namespace) -> None:
     print(f"Closed clone {args.clone_id}")
 
 
+
+def cmd_device(args: argparse.Namespace) -> None:
+    if args.device_action == "use":
+        try:
+            save_device(args.name)
+        except ValueError as error:
+            print(error)
+            sys.exit(2)
+        print(f"Device selection set to: {args.name.lower()}")
+        return
+
+    choice = selected_device()
+    print(f"Selected: {choice}")
+    for name, url, healthy in device_status():
+        marker = " (selected)" if choice == name else ""
+        status = "healthy" if healthy else "offline"
+        print(f"{name:8} {status:7} {url}{marker}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="echoprofile")
+    parser.add_argument(
+        "--device", help="Target arch, laptop, vps, an explicit base URL, or auto for this command"
+    )
     subparsers = parser.add_subparsers(required=True)
+
+    p_device = subparsers.add_parser("device", help="Select a browser device or inspect device health")
+    device_actions = p_device.add_subparsers(dest="device_action", required=True)
+    p_device_use = device_actions.add_parser("use", help="Persist the target device: auto, arch, laptop, or vps")
+    p_device_use.add_argument("name", choices=["auto", *DEVICE_URLS])
+    p_device_use.set_defaults(func=cmd_device)
+    p_device_status = device_actions.add_parser("status", help="Show health for each known device")
+    p_device_status.set_defaults(func=cmd_device)
 
     p_login = subparsers.add_parser(
         "login", help="Open the persistent Edge profile (via `serve`) and keep it open for reuse"
