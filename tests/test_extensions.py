@@ -56,6 +56,12 @@ class ExtensionArgsTests(unittest.TestCase):
 
         self.assertIsNone(config.multica_extension_dir)
 
+    def test_disabled_multica_sentinel_disables_multica(self) -> None:
+        with patch.dict(os.environ, {"ECHOPROFILE_MULTICA_DIR": "disabled"}, clear=True):
+            config = load_config()
+
+        self.assertIsNone(config.multica_extension_dir)
+
     def test_loads_switchboard_and_multica_together(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

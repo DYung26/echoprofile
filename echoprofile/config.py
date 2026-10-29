@@ -59,7 +59,8 @@ def load_config() -> Config:
         os.environ.get("ECHOPROFILE_SWITCHBOARD_DIR", SWITCHBOARD_EXTENSION_DIR)
     ).expanduser()
     multica_dir = os.environ.get("ECHOPROFILE_MULTICA_DIR", str(MULTICA_EXTENSION_DIR))
-    multica_extension_dir = Path(multica_dir).expanduser() if multica_dir else None
+    multica_disabled = multica_dir.strip().lower() in {"", "0", "false", "none", "off", "disabled"}
+    multica_extension_dir = Path(multica_dir).expanduser() if not multica_disabled else None
     return Config(
         profile_dir=profile_dir,
         host=host,
