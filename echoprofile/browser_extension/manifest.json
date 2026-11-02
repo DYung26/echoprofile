@@ -3,9 +3,29 @@
   "name": "EchoProfile Browser Control",
   "version": "0.1.0",
   "description": "Independent browser-control bridge for EchoProfile.",
-  "permissions": ["tabs", "activeTab", "scripting", "debugger", "storage", "alarms"],
-  "host_permissions": ["<all_urls>"],
-  "background": {"service_worker": "service-worker.js", "type": "module"},
+  "permissions": [
+    "tabs",
+    "activeTab",
+    "scripting",
+    "debugger",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1:8756/*",
+    "http://localhost:8756/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
   "options_page": "options.html",
-  "action": {"default_title": "EchoProfile Browser Control"}
+  "action": {
+    "default_title": "EchoProfile Browser Control"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuchJYpuRRXsBi3NeBOU5cKubY7uroiZuBZaz/1Hc8c04boYizdRNXQur8J7+uHLxFwE15ckSvFEcs3jQSb54OuTSGLx9WyjpwcpJO+3bWLbQsIWKP95339A+BCwupB0SDhS95cMTrrNu/3b4cUWR3nHMMWK4TXeSsWI1PBgCg2MxwkXT+dyYeBgKZqErVXCywlzp3LSvLmP3prYoNfBL4EsFFqgn5n/kQq2Pmb5Ia7CI1icamqmRvWOIW/UPS4qxYVjzAeAWvcuXiLAuQo2RrXmIoFp8wegCnZ5jG/FXinkw0/xI12ng5FclHvj7stK/1okxRosrj7/LtFVH1k9+3QIDAQAB",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src http://127.0.0.1:8756 ws://127.0.0.1:8756"
+  }
 }

@@ -183,7 +183,25 @@ EchoProfile Browser Control is an unpacked Manifest V3 extension shipped inside 
 
 The EchoProfile server is only the agent-to-extension message relay. The extension keeps an authenticated WebSocket to `/extension/connect`; the agent sends actions through `POST /extension/action` with `Authorization: Bearer <pairing-token>`, and the extension executes them locally in its browser and returns the result. This is a separate control path from Playwright/CDP, not a fallback or wrapper around it.
 
-On first use, EchoProfile creates a random pairing token at `~/.config/echoprofile/extension-token` with owner-only permissions. Retrieve it with `echoprofile extension-token`, click the EchoProfile Browser Control toolbar icon (or open its Options from `chrome://extensions`), and set the server URL and token. The extension reconnects automatically after browser/server restarts. The server requires the token to be configured; the extension does not accept commands from arbitrary websites.
+On first use, EchoProfile creates a random pairing token at `~/.config/echoprofile/extension-token` with owner-only permissions. The extension has a pinned identity and retrieves that token automatically from the local server through an origin-restricted bootstrap endpoint; no server URL or token needs to be entered or copied. The token is persisted in extension storage and reused after browser/server restarts. The bootstrap endpoint accepts only loopback clients, rejects other supplied origins, and scopes its CORS response to the pinned extension origin. The token is then required for the authenticated WebSocket and action API.
+
+### EchoProfile MCP server
+
+EchoProfile includes a dedicated stdio MCP server for the extension-backed browser. It is an independent control mechanism from the Playwright/CDP browser tools: MCP calls the EchoProfile HTTP API, which relays the action to the paired extension over its WebSocket.
+
+Install EchoProfile in the environment used by your MCP client, then register this server:
+
+```json
+{
+  "mcpServers": {
+    "echoprofile-browser": {
+      "command": "echoprofile-mcp"
+    }
+  }
+}
+```
+
+The MCP process reads the same local pairing-token file and host/port configuration as the API server, so no separate token or endpoint configuration is needed. By default, it connects to `http://127.0.0.1:8756`; the extension endpoint is fixed to that local address. The tools expose browser status, tab management, navigation, page title/text/HTML, click, fill, keypress, scrolling, and screenshots. Start `echoprofile serve` and open the persistent `login` profile; once the extension is loaded, pairing happens automatically.
 
 Supported extension actions currently include `status`, `tabs.list`, `tabs.active`, `tabs.new`, `tabs.close`, `tabs.activate`, `navigate`, `page.title`, `page.text`, `page.html`, `page.click`, `page.fill`, `page.press`, `page.scroll`, and `page.screenshot`.
 

@@ -2,10 +2,17 @@ const DEFAULT_SERVER = "http://127.0.0.1:8756";
 const RECONNECT_ALARM = "echoprofile-reconnect";
 let socket;
 let reconnectDelay = 1000;
+let connecting = false;
 
 async function settings() {
-  const values = await chrome.storage.local.get({ serverUrl: DEFAULT_SERVER, token: "" });
-  return values;
+  const values = await chrome.storage.local.get({ token: "" });
+  if (values.token) return { token: values.token };
+  const response = await fetch(`${DEFAULT_SERVER}/extension/bootstrap`, { method: "GET", credentials: "omit", cache: "no-store" });
+  if (!response.ok) throw new Error(`EchoProfile pairing bootstrap failed (${response.status})`);
+  const { token } = await response.json();
+  if (!token) throw new Error("EchoProfile server returned an empty pairing token");
+  await chrome.storage.local.set({ token });
+  return { token };
 }
 
 function send(message) {
@@ -14,38 +21,50 @@ function send(message) {
 }
 
 async function connect() {
-  if (socket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(socket.readyState)) return;
-  const { serverUrl, token } = await settings();
-  if (!token) return;
-  const wsUrl = serverUrl.replace(/^http/, "ws").replace(/\/$/, "") + "/extension/connect";
-  console.log("EchoProfile connecting", wsUrl);
-  const current = new WebSocket(wsUrl);
-  socket = current;
-  current.onopen = () => {
-    console.log("EchoProfile WebSocket opened");
-    reconnectDelay = 1000;
-    current.send(JSON.stringify({ type: "authenticate", token, version: chrome.runtime.getManifest().version }));
-  };
-  current.onmessage = async event => {
-    let message;
-    try { message = JSON.parse(event.data); } catch { return; }
-    if (message.type === "authenticated") return;
-    if (message.type === "heartbeat") { send({ type: "heartbeat-ack" }); return; }
-    if (message.type !== "command" || !message.id) return;
+  if (connecting || (socket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(socket.readyState))) return;
+  connecting = true;
+  try {
+    let token;
     try {
-      const result = await execute(message.action, message.payload || {});
-      send({ type: "result", id: message.id, ok: true, result });
+      ({ token } = await settings());
     } catch (error) {
-      send({ type: "result", id: message.id, ok: false, error: String(error?.message || error) });
+      console.warn("EchoProfile pairing is not ready yet", error);
+      chrome.alarms.create(RECONNECT_ALARM, { delayInMinutes: 0.5 });
+      return;
     }
-  };
-  current.onclose = event => {
-    console.warn("EchoProfile WebSocket closed", event.code, event.reason);
-    if (socket === current) socket = undefined;
-    chrome.alarms.create(RECONNECT_ALARM, { delayInMinutes: Math.max(reconnectDelay / 60000, 0.5) });
-    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
-  };
-  current.onerror = error => { console.error("EchoProfile WebSocket error", error); current.close(); };
+    if (!token) return;
+    const wsUrl = DEFAULT_SERVER.replace(/^http/, "ws") + "/extension/connect";
+    console.log("EchoProfile connecting", wsUrl);
+    const current = new WebSocket(wsUrl);
+    socket = current;
+    current.onopen = () => {
+      console.log("EchoProfile WebSocket opened");
+      reconnectDelay = 1000;
+      current.send(JSON.stringify({ type: "authenticate", token, version: chrome.runtime.getManifest().version }));
+    };
+    current.onmessage = async event => {
+      let message;
+      try { message = JSON.parse(event.data); } catch { return; }
+      if (message.type === "authenticated") return;
+      if (message.type === "heartbeat") { send({ type: "heartbeat-ack" }); return; }
+      if (message.type !== "command" || !message.id) return;
+      try {
+        const result = await execute(message.action, message.payload || {});
+        send({ type: "result", id: message.id, ok: true, result });
+      } catch (error) {
+        send({ type: "result", id: message.id, ok: false, error: String(error?.message || error) });
+      }
+    };
+    current.onclose = event => {
+      console.warn("EchoProfile WebSocket closed", event.code, event.reason);
+      if (socket === current) socket = undefined;
+      chrome.alarms.create(RECONNECT_ALARM, { delayInMinutes: Math.max(reconnectDelay / 60000, 0.5) });
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    };
+    current.onerror = error => { console.error("EchoProfile WebSocket error", error); current.close(); };
+  } finally {
+    connecting = false;
+  }
 }
 
 async function activeTab() {

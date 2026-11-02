@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import ipaddress
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from echoprofile.config import Config, load_config
 from echoprofile.core import CloneManager
+
+
+BROWSER_EXTENSION_ID = "bocgihfkibcmlmldnegcakfppijcdlhb"
 
 
 class CloneRequest(BaseModel):
@@ -171,6 +175,32 @@ def create_app(config: Config | None = None) -> FastAPI:
             pass
         finally:
             await extension_bridge.detach(websocket)
+
+    @app.get("/extension/bootstrap")
+    async def extension_bootstrap(request: Request):
+        # The extension has a pinned manifest key and a fixed CORS allow-origin.
+        # Chrome extension service-worker GETs may omit Origin. If present,
+        # require the pinned extension origin; always enforce a loopback client.
+        expected_origin = f"chrome-extension://{BROWSER_EXTENSION_ID}"
+        origin = request.headers.get("origin")
+        client_host = request.client.host if request.client else ""
+        try:
+            is_loopback = ipaddress.ip_address(client_host).is_loopback
+        except ValueError:
+            is_loopback = False
+        if not is_loopback or (origin is not None and origin != expected_origin):
+            raise HTTPException(
+                status_code=403,
+                detail="EchoProfile pairing bootstrap is available only to local clients",
+            )
+        return JSONResponse(
+            {"token": config.extension_token},
+            headers={
+                "Access-Control-Allow-Origin": expected_origin,
+                "Cache-Control": "no-store",
+                "Vary": "Origin",
+            },
+        )
 
     @app.get("/extension/status")
     async def extension_status():
