@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "EchoProfile Browser Control",
+  "version": "0.1.0",
+  "description": "Independent browser-control bridge for EchoProfile.",
+  "permissions": ["tabs", "activeTab", "scripting", "debugger", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": {"service_worker": "service-worker.js", "type": "module"},
+  "options_page": "options.html",
+  "action": {"default_title": "EchoProfile Browser Control"}
+}
