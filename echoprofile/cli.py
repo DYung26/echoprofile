@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import argparse
 import shutil
+from pathlib import Path
 import sys
 
 import httpx
 
-from echoprofile.config import MAESTRO_PROFILE_DIR, load_config
+from echoprofile.config import EXTENSION_TOKEN_FILE, MAESTRO_PROFILE_DIR, load_config
 from echoprofile.routing import DEVICE_URLS, device_status, resolve_base_url, save_device, selected_device
 
 
@@ -41,6 +42,8 @@ def cmd_login(args: argparse.Namespace) -> None:
     base_url = resolve_base_url(config, getattr(args, 'device', None))
     load_switchboard = not args.no_switchboard
     load_multica = config.multica_extension_dir is not None
+    load_chatgpt = args.chatgpt_extension
+    extension_dirs = [Path(path).expanduser() for path in args.extension]
     print("Asking the server to open the persistent profile - this can take ")
     print("a while on a first/cold launch. Watch for a new browser window.")
     try:
@@ -49,6 +52,10 @@ def cmd_login(args: argparse.Namespace) -> None:
             json={
                 "load_switchboard": load_switchboard,
                 "load_multica": load_multica,
+                "load_chatgpt": load_chatgpt,
+                "load_echoprofile": True,
+                "extension_dirs": [str(path) for path in extension_dirs],
+                "restrict_extensions": args.restrict_extensions,
             },
             timeout=120.0,
         )
@@ -72,7 +79,19 @@ def cmd_login(args: argparse.Namespace) -> None:
         print("Switchboard extension loaded.")
     if load_multica:
         print("Multica Web Runtime extension loaded.")
+    print("EchoProfile Browser Control extension loaded.")
+    if load_chatgpt:
+        print("ChatGPT extension requested.")
+    for extension_dir in extension_dirs:
+        print(f"Custom extension requested: {extension_dir}")
     print("Log in as needed in that window. It stays open until `echoprofile logout`.")
+
+
+def cmd_extension_token(args: argparse.Namespace) -> None:
+    """Print the local browser-extension pairing token."""
+    config = load_config()
+    print(config.extension_token)
+    print(f"Token file: {EXTENSION_TOKEN_FILE}", file=sys.stderr)
 
 
 def cmd_logout(args: argparse.Namespace) -> None:
@@ -221,11 +240,31 @@ def main() -> None:
         "login", help="Open the persistent Edge profile (via `serve`) and keep it open for reuse"
     )
     p_login.add_argument(
+        "--chatgpt-extension",
+        action="store_true",
+        help="Load the ChatGPT unpacked extension configured by ECHOPROFILE_CHATGPT_EXTENSION_DIR",
+    )
+    p_login.add_argument(
+        "--extension",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="Load an additional unpacked extension directory (repeatable)",
+    )
+    p_login.add_argument(
+        "--restrict-extensions",
+        action="store_true",
+        help="Disable extensions except those explicitly selected for this launch",
+    )
+    p_login.add_argument(
         "--no-switchboard",
         action="store_true",
         help="Skip loading the Switchboard extension (Multica Web Runtime remains enabled)",
     )
     p_login.set_defaults(func=cmd_login)
+
+    p_token = subparsers.add_parser("extension-token", help="Print the local browser-extension pairing token")
+    p_token.set_defaults(func=cmd_extension_token)
 
     p_logout = subparsers.add_parser("logout", help="Close the open persistent Edge profile")
     p_logout.set_defaults(func=cmd_logout)
