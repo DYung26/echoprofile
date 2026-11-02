@@ -1,4 +1,7 @@
 import asyncio
+import base64
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +9,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from echoprofile.config import Config
-from echoprofile.server import ExtensionBridge, create_app
+from echoprofile.server import BROWSER_EXTENSION_ID, ExtensionBridge, create_app
 
 
 class FakeWebSocket:
@@ -51,6 +54,14 @@ class ExtensionBridgeTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ExtensionApiTests(unittest.TestCase):
+    def test_manifest_identity_matches_bootstrap_allow_origin(self):
+        manifest_path = Path(__file__).parents[1] / "echoprofile" / "browser_extension" / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        public_key = base64.b64decode(manifest["key"])
+        digest = hashlib.sha256(public_key).digest()[:16]
+        extension_id = "".join(chr(97 + (byte >> 4)) + chr(97 + (byte & 15)) for byte in digest)
+        self.assertEqual(extension_id, BROWSER_EXTENSION_ID)
+
     def test_action_requires_paired_extension(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -69,6 +80,34 @@ class ExtensionApiTests(unittest.TestCase):
                 )
                 self.assertEqual(response.status_code, 409)
                 self.assertIn("not connected", response.json()["detail"])
+
+    def test_bootstrap_is_loopback_only_and_scopes_cors_to_extension(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = Config(
+                profile_dir=root / "profile", host="127.0.0.1", port=8756,
+                default_url="about:blank", switchboard_extension_dir=None,
+                multica_extension_dir=None, extension_token="secret",
+            )
+            with TestClient(create_app(config), client=("127.0.0.1", 50000)) as client:
+                denied = TestClient(
+                    create_app(config), client=("8.8.8.8", 50000)
+                ).get("/extension/bootstrap")
+                self.assertEqual(denied.status_code, 403)
+                attacker_origin = client.get(
+                    "/extension/bootstrap", headers={"Origin": "https://example.com"}
+                )
+                self.assertEqual(attacker_origin.status_code, 403)
+                allowed = client.get(
+                    "/extension/bootstrap",
+                    headers={"Origin": "chrome-extension://bocgihfkibcmlmldnegcakfppijcdlhb"},
+                )
+                self.assertEqual(allowed.status_code, 200)
+                self.assertEqual(allowed.json(), {"token": "secret"})
+                self.assertEqual(
+                    allowed.headers["access-control-allow-origin"],
+                    "chrome-extension://bocgihfkibcmlmldnegcakfppijcdlhb",
+                )
 
     def test_connection_requires_pairing_token(self):
         with tempfile.TemporaryDirectory() as temp_dir:
