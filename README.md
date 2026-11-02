@@ -149,7 +149,7 @@ ECHOPROFILE_NO_RELOAD=1 echoprofile serve
 | Command | What it does |
 | --- | --- |
 | `echoprofile serve` | Start the local FastAPI server (`127.0.0.1:8756`). Required for every other command except `seed-from-maestro`. |
-| `echoprofile login` | Open the persistent headed profile and keep it open. Loads the Switchboard extension by default; pass `--no-switchboard` to skip. |
+| `echoprofile login` | Open the persistent headed profile. Loads Switchboard and configured Multica by default; optional ChatGPT and custom unpacked extensions can be added with flags. |
 | `echoprofile logout` | Close the persistent profile. |
 | `echoprofile persistent-status` | Print `open` or `closed`. |
 | `echoprofile seed-from-maestro` | Filesystem copy of Maestro's profile into echoprofile's. Refuses if Maestro looks open (`SingletonLock`) or the dest already exists; `--force` overrides both. |
@@ -175,7 +175,35 @@ persistent profile (on disk)     worker browser (one process)
 
 Default browser is Playwright's bundled Chromium, not Microsoft Edge. Native Edge on Arch is not something `playwright install msedge` can set up, and a Flatpak Edge is not launchable by Playwright. Set `ECHOPROFILE_CHANNEL=msedge` only if a native (non-Flatpak) Edge install is actually on `PATH`.
 
-Switchboard (Manifest V3) is loaded only into the persistent `login` window, never into clones. Clones inherit login state from the snapshot, not from the extension.
+EchoProfile Browser Control, Switchboard and Multica (Manifest V3) are loaded only into the persistent `login` window, never into clones. Clones inherit login state from the snapshot, not from the extensions.
+
+### Extension loading and independent browser control
+
+EchoProfile Browser Control is an unpacked Manifest V3 extension shipped inside the Python package and loaded automatically in the persistent `login` profile. It controls its own browser directly through Chrome extension APIs (`tabs`, `scripting`, and `debugger`); it does not use Playwright or CDP.
+
+The EchoProfile server is only the agent-to-extension message relay. The extension keeps an authenticated WebSocket to `/extension/connect`; the agent sends actions through `POST /extension/action` with `Authorization: Bearer <pairing-token>`, and the extension executes them locally in its browser and returns the result. This is a separate control path from Playwright/CDP, not a fallback or wrapper around it.
+
+On first use, EchoProfile creates a random pairing token at `~/.config/echoprofile/extension-token` with owner-only permissions. Retrieve it with `echoprofile extension-token`, click the EchoProfile Browser Control toolbar icon (or open its Options from `chrome://extensions`), and set the server URL and token. The extension reconnects automatically after browser/server restarts. The server requires the token to be configured; the extension does not accept commands from arbitrary websites.
+
+Supported extension actions currently include `status`, `tabs.list`, `tabs.active`, `tabs.new`, `tabs.close`, `tabs.activate`, `navigate`, `page.title`, `page.text`, `page.html`, `page.click`, `page.fill`, `page.press`, `page.scroll`, and `page.screenshot`.
+
+EchoProfile can also load multiple additional unpacked Chromium extensions into the same persistent profile. Chromium starts each extension in the browser process; extension service workers/background pages and content scripts then run under the extension's own permissions and lifecycle. An extension is not automatically a Playwright controller: EchoProfile must speak the extension's documented messaging/API bridge if it wants to ask that extension to perform actions.
+
+The default loader uses `--load-extension` without `--disable-extensions-except`. This lets extensions installed normally in the profile remain enabled too. Use `--restrict-extensions` only when you explicitly want an allow-list containing the extensions supplied for that launch.
+
+```bash
+# Built-ins + ChatGPT extension from its configured path
+echoprofile login --chatgpt-extension
+
+# Built-ins + any additional unpacked extension(s)
+echoprofile login --extension ~/Projects/some-extension/dist
+
+echoprofile login --extension ~/Projects/extension-a/dist --extension ~/Projects/extension-b/dist
+```
+
+Set `ECHOPROFILE_CHATGPT_EXTENSION_DIR` to the directory containing the ChatGPT extension's `manifest.json` before using `--chatgpt-extension`. Custom `--extension` paths are passed to the serving EchoProfile instance, so they must exist on the machine running that server. Close and reopen the persistent profile to change its launch-time extension set.
+
+The ChatGPT extension is designed to connect the browser to ChatGPT Work/Codex. Its documented setup is through ChatGPT desktop Settings → Computer Use, then selecting the browser and installing the store extension; it uses browser permissions such as debugger access and communication with cooperating native applications. This makes it usable by ChatGPT, but does not expose a documented third-party bridge for EchoProfile to invoke. Keep it independently installed/enabled in the profile; EchoProfile does not need to manage or repackage it. CDP remains the direct Playwright/browser-control path; EchoProfile extensions can expose a bridge we own, while the ChatGPT extension remains ChatGPT's own integration.
 
 ## Configuration
 
@@ -189,6 +217,8 @@ All optional; override with env vars.
 | `ECHOPROFILE_DEFAULT_URL` | `about:blank` |
 | `ECHOPROFILE_CHANNEL` | unset (bundled Chromium). `msedge` for native Edge. |
 | `ECHOPROFILE_SWITCHBOARD_DIR` | `~/Projects/switchboard/dist` |
+| `ECHOPROFILE_CHATGPT_EXTENSION_DIR` | unset |
+| `ECHOPROFILE_EXTENSION_TOKEN` | generated at `~/.config/echoprofile/extension-token` |
 | `ECHOPROFILE_NO_RELOAD` | unset (reload on). Set to disable uvicorn `--reload`. |
 | `ECHOPROFILE_FORCE_RELOAD` | Windows only: set to turn reload back on. |
 
@@ -203,10 +233,12 @@ The CLI is a wrapper around this. Base URL is `http://$ECHOPROFILE_HOST:$ECHOPRO
 | `POST` | `/clone` | Body `{ "url": "..." }` (url optional). |
 | `GET` | `/clones` | |
 | `POST` | `/clones/{id}/close` | 404 if unknown. |
-| `POST` | `/persistent/open` | Body `{ "load_switchboard": true }`. 409 if already open. |
+| `POST` | `/persistent/open` | Optional `load_switchboard`, `load_multica`, `load_chatgpt`, `extension_dirs` (array of paths), and `restrict_extensions`. 409 if already open. |
 | `POST` | `/persistent/close` | 409 if not open. |
 | `GET` | `/persistent` | `{ "open": bool }` |
-| `POST` | `/browser/action` | Executes an allow-listed browser capability through an extension in the live persistent context. |
+| `GET` | `/extension/status` | Whether EchoProfile Browser Control is connected. |
+| `POST` | `/extension/action` | Execute an action in the extension-controlled browser (separate from Playwright). Requires `Authorization: Bearer <pairing-token>`. Body `{ "action": "tabs.list", "payload": {} }`. |
+| `POST` | `/browser/action` | Existing Switchboard/Multica extension actions bridged through the persistent Playwright context. |
 | `GET` | `/health` | `{ "status": "ok" }` |
 
 ### Browser actions

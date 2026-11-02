@@ -25,28 +25,56 @@ _PROFILE_UNLOCK_POLL_INTERVAL_S = 0.1
 
 
 def _extension_args(
-    config: Config, *, load_switchboard: bool, load_multica: bool
+    config: Config,
+    *,
+    load_switchboard: bool,
+    load_multica: bool,
+    load_chatgpt: bool = False,
+    load_echoprofile: bool = True,
+    extension_dirs: list[Path] | None = None,
+    restrict_extensions: bool = False,
 ) -> list[str]:
-    extension_dirs: list[Path] = []
-    if load_switchboard:
-        extension_dirs.append(
-            _require_extension_dir(config.switchboard_extension_dir, "Switchboard")
-        )
-    if load_multica and config.multica_extension_dir is not None:
-        extension_dirs.append(
-            _require_extension_dir(config.multica_extension_dir, "Multica Web Runtime")
-        )
+    """Build Chromium arguments for selected unpacked extensions.
 
-    if not extension_dirs:
+    By default Chromium's normal extension set remains enabled, so extensions
+    installed through the profile UI are not suppressed. `restrict_extensions`
+    is an opt-in mode for deterministic, allow-listed launches.
+    """
+    selected: list[Path] = []
+    if load_echoprofile:
+        selected.append(_require_extension_dir(config.browser_extension_dir, "EchoProfile Browser Control"))
+    if load_switchboard:
+        selected.append(_require_extension_dir(config.switchboard_extension_dir, "Switchboard"))
+    if load_multica and config.multica_extension_dir is not None:
+        selected.append(_require_extension_dir(config.multica_extension_dir, "Multica Web Runtime"))
+    if load_chatgpt:
+        selected.append(_require_extension_dir(config.chatgpt_extension_dir, "ChatGPT"))
+    selected.extend(_require_extension_dir(path, "Custom") for path in (extension_dirs or []))
+
+    # Preserve order but avoid passing the same path twice.
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in selected:
+        resolved = path.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+
+    if not unique:
         return []
 
-    paths = ",".join(str(path) for path in extension_dirs)
-    return [f"--disable-extensions-except={paths}", f"--load-extension={paths}"]
+    paths = ",".join(str(path) for path in unique)
+    args = [f"--load-extension={paths}"]
+    if restrict_extensions:
+        args.insert(0, f"--disable-extensions-except={paths}")
+    return args
 
 
 def _require_extension_dir(extension_dir: Path | None, name: str) -> Path:
     if extension_dir is None or not extension_dir.is_dir():
         raise RuntimeError(f"{name} extension not found at {extension_dir}")
+    if not (extension_dir / "manifest.json").is_file():
+        raise RuntimeError(f"{name} extension has no manifest.json at {extension_dir}")
     return extension_dir
 
 
@@ -119,6 +147,10 @@ async def launch_persistent_profile(
     headless: bool = False,
     load_switchboard: bool = False,
     load_multica: bool = True,
+    load_chatgpt: bool = False,
+    load_echoprofile: bool = True,
+    extension_dirs: list[Path] | None = None,
+    restrict_extensions: bool = False,
 ) -> tuple[Playwright, BrowserContext]:
     """Launch the one real, on-disk Edge profile for manual login.
 
@@ -142,7 +174,13 @@ async def launch_persistent_profile(
     if not headless:
         args.append("--start-maximized")
     extension_args = _extension_args(
-        config, load_switchboard=load_switchboard, load_multica=load_multica
+        config,
+        load_switchboard=load_switchboard,
+        load_multica=load_multica,
+        load_chatgpt=load_chatgpt,
+        load_echoprofile=load_echoprofile,
+        extension_dirs=extension_dirs,
+        restrict_extensions=restrict_extensions,
     )
     if extension_args:
         args.extend(extension_args)
@@ -163,7 +201,14 @@ async def launch_persistent_profile(
 
 
 async def open_persistent_profile(
-    config: Config, *, load_switchboard: bool = False, load_multica: bool = True
+    config: Config,
+    *,
+    load_switchboard: bool = False,
+    load_multica: bool = True,
+    load_chatgpt: bool = False,
+    load_echoprofile: bool = True,
+    extension_dirs: list[Path] | None = None,
+    restrict_extensions: bool = False,
 ) -> tuple[Playwright, BrowserContext]:
     """Launch the one real, on-disk Edge profile, headed, for the caller to
     keep open and reuse.
@@ -180,6 +225,10 @@ async def open_persistent_profile(
         headless=False,
         load_switchboard=load_switchboard,
         load_multica=load_multica,
+        load_chatgpt=load_chatgpt,
+        load_echoprofile=load_echoprofile,
+        extension_dirs=extension_dirs,
+        restrict_extensions=restrict_extensions,
     )
 
 
@@ -303,7 +352,14 @@ class CloneManager:
         return self._persistent_context is not None
 
     async def open_persistent(
-        self, *, load_switchboard: bool = False, load_multica: bool = True
+        self,
+        *,
+        load_switchboard: bool = False,
+        load_multica: bool = True,
+        load_chatgpt: bool = False,
+        load_echoprofile: bool = True,
+        extension_dirs: list[Path] | None = None,
+        restrict_extensions: bool = False,
     ) -> None:
         """Launch the persistent profile headed and keep it open for reuse.
 
@@ -317,6 +373,10 @@ class CloneManager:
                 self._config,
                 load_switchboard=load_switchboard,
                 load_multica=load_multica,
+                load_chatgpt=load_chatgpt,
+                load_echoprofile=load_echoprofile,
+                extension_dirs=extension_dirs,
+                restrict_extensions=restrict_extensions,
             )
             self._persistent_playwright = playwright
             self._persistent_context = context

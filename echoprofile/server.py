@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import hmac
+import ipaddress
+import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from echoprofile.config import Config, load_config
@@ -24,9 +29,18 @@ class CloneRequest(BaseModel):
 class OpenPersistentRequest(BaseModel):
     load_switchboard: bool = False
     load_multica: bool = False
+    load_chatgpt: bool = False
+    load_echoprofile: bool = True
+    extension_dirs: list[str] = Field(default_factory=list)
+    restrict_extensions: bool = False
 
 
 class BrowserActionRequest(BaseModel):
+    action: str
+    payload: dict[str, object] = Field(default_factory=dict)
+
+
+class ExtensionActionRequest(BaseModel):
     action: str
     payload: dict[str, object] = Field(default_factory=dict)
 
@@ -36,9 +50,75 @@ class ChatGPTApiPrepareRequest(BaseModel):
     replacement: str
 
 
+class ExtensionBridge:
+    """Authenticated request/response channel to the browser extension."""
+
+    def __init__(self) -> None:
+        self.websocket: WebSocket | None = None
+        self.pending: dict[str, asyncio.Future[dict[str, object]]] = {}
+        self.lock = asyncio.Lock()
+
+    async def attach(self, websocket: WebSocket) -> None:
+        async with self.lock:
+            if self.websocket is not None:
+                await self.websocket.close(code=4001, reason="Replaced by a newer extension connection")
+            self.websocket = websocket
+
+    async def detach(self, websocket: WebSocket) -> None:
+        async with self.lock:
+            if self.websocket is not websocket:
+                return
+            self.websocket = None
+            pending = list(self.pending.values())
+            self.pending.clear()
+        for future in pending:
+            if not future.done():
+                future.set_exception(RuntimeError("EchoProfile browser extension disconnected"))
+
+    async def resolve(self, message: dict[str, object]) -> None:
+        request_id = str(message.get("id", ""))
+        future = self.pending.pop(request_id, None)
+        if future is None or future.done():
+            return
+        if message.get("ok") is True:
+            future.set_result({"result": message.get("result")})
+        else:
+            future.set_result({"error": str(message.get("error", "Extension action failed"))})
+
+    async def request(self, action: str, payload: dict[str, object], timeout: float = 30) -> object:
+        async with self.lock:
+            websocket = self.websocket
+            if websocket is None:
+                raise RuntimeError("EchoProfile browser extension is not connected; open its options and pair it with this server")
+            request_id = uuid.uuid4().hex
+            future: asyncio.Future[dict[str, object]] = asyncio.get_running_loop().create_future()
+            self.pending[request_id] = future
+            try:
+                await websocket.send_json({"type": "command", "id": request_id, "action": action, "payload": payload})
+            except Exception:
+                self.pending.pop(request_id, None)
+                raise RuntimeError("Could not send command to EchoProfile browser extension")
+        try:
+            response = await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError as error:
+            self.pending.pop(request_id, None)
+            raise RuntimeError(f"Extension action timed out after {timeout:g}s: {action}") from error
+        except asyncio.CancelledError:
+            self.pending.pop(request_id, None)
+            raise
+        if "error" in response:
+            raise ValueError(str(response["error"]))
+        return response.get("result")
+
+    @property
+    def connected(self) -> bool:
+        return self.websocket is not None
+
+
 def create_app(config: Config | None = None) -> FastAPI:
     config = config or load_config()
     manager = CloneManager(config)
+    extension_bridge = ExtensionBridge()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -92,6 +172,52 @@ def create_app(config: Config | None = None) -> FastAPI:
             "candidate_urls": candidate_urls(config),
         }
 
+    @app.websocket("/extension/connect")
+    async def extension_connect(websocket: WebSocket):
+        if not config.extension_token:
+            await websocket.close(code=4403, reason="ECHOPROFILE_EXTENSION_TOKEN is not configured")
+            return
+        await websocket.accept()
+        try:
+            auth = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+            supplied = str(auth.get("token", "")) if isinstance(auth, dict) else ""
+            if not hmac.compare_digest(supplied, config.extension_token):
+                await websocket.close(code=4403, reason="Invalid pairing token")
+                return
+            await extension_bridge.attach(websocket)
+            await websocket.send_json({"type": "authenticated"})
+            while True:
+                try:
+                    message = await asyncio.wait_for(websocket.receive_json(), timeout=20)
+                except asyncio.TimeoutError:
+                    await websocket.send_json({"type": "heartbeat"})
+                    continue
+                if isinstance(message, dict) and message.get("type") == "result":
+                    await extension_bridge.resolve(message)
+        except (WebSocketDisconnect, asyncio.TimeoutError):
+            pass
+        finally:
+            await extension_bridge.detach(websocket)
+
+    @app.get("/extension/status")
+    async def extension_status():
+        return {"connected": extension_bridge.connected}
+
+    @app.post("/extension/action")
+    async def extension_action(
+        request: ExtensionActionRequest,
+        authorization: str | None = Header(default=None),
+    ):
+        supplied = authorization[7:] if authorization and authorization.startswith("Bearer ") else ""
+        if not config.extension_token or not hmac.compare_digest(supplied, config.extension_token):
+            raise HTTPException(status_code=401, detail="Invalid EchoProfile extension API token")
+        try:
+            return await extension_bridge.request(request.action, request.payload)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
     @app.post("/browser/action")
     async def browser_action(request: BrowserActionRequest):
         try:
@@ -127,6 +253,10 @@ def create_app(config: Config | None = None) -> FastAPI:
         await manager.open_persistent(
             load_switchboard=request.load_switchboard,
             load_multica=request.load_multica,
+            load_chatgpt=request.load_chatgpt,
+            load_echoprofile=request.load_echoprofile,
+            extension_dirs=[Path(path).expanduser() for path in request.extension_dirs],
+            restrict_extensions=request.restrict_extensions,
         )
         return {"open": True}
 
