@@ -229,6 +229,7 @@ All optional; override with env vars.
 
 | Variable | Default |
 | --- | --- |
+| `ECHOPROFILE_DOWNLOAD_DIR` | `~/Downloads` |
 | `ECHOPROFILE_PROFILE_DIR` | `~/.local/share/echoprofile/edge-profile` |
 | `ECHOPROFILE_HOST` | `127.0.0.1` |
 | `ECHOPROFILE_BIND_LOOPBACK` | unset. Set to `1` to add a loopback listener alongside a specific non-loopback host binding. |
@@ -317,3 +318,5 @@ existing browser windows, cookies, or clones between machines.
 ## HTTP routing resolver
 
 GET /routing/resolve returns the base URL selected by EchoProfile's persisted device choice and automatic-fallback configuration. Clients such as AiSP should query this local control-plane endpoint, then send browser actions to the returned base_url instead of maintaining their own device URL setting.
+
+Browser downloads from the persistent profile and clones are saved to `~/Downloads` by default (or `ECHOPROFILE_DOWNLOAD_DIR`), using the filename suggested by the server. Existing files are preserved by adding a numbered suffix.

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_PROFILE_DIR = Path.home() / ".local" / "share" / "echoprofile" / "edge-profile"
+DEFAULT_DOWNLOAD_DIR = Path.home() / "Downloads"
 DEFAULT_PORT = 8756
 DEFAULT_CONFIG_DIR = Path.home() / ".config" / "echoprofile"
 EXTENSION_TOKEN_FILE = DEFAULT_CONFIG_DIR / "extension-token"
@@ -70,6 +71,7 @@ class Config:
     channel: str | None = None
     switchboard_extension_dir: Path | None = None
     multica_extension_dir: Path | None = None
+    download_dir: Path = DEFAULT_DOWNLOAD_DIR
     chatgpt_extension_dir: Path | None = None
     extension_token: str = ""
     browser_extension_dir: Path = DEFAULT_BROWSER_EXTENSION_DIR
@@ -92,6 +94,7 @@ def load_config() -> Config:
     multica_dir = os.environ.get("ECHOPROFILE_MULTICA_DIR", str(MULTICA_EXTENSION_DIR))
     multica_disabled = multica_dir.strip().lower() in {"", "0", "false", "none", "off", "disabled"}
     multica_extension_dir = Path(multica_dir).expanduser() if not multica_disabled else None
+    download_dir = Path(os.environ.get("ECHOPROFILE_DOWNLOAD_DIR", DEFAULT_DOWNLOAD_DIR)).expanduser()
     chatgpt_dir = os.environ.get("ECHOPROFILE_CHATGPT_EXTENSION_DIR", "").strip()
     chatgpt_extension_dir = Path(chatgpt_dir).expanduser() if chatgpt_dir else None
     browser_extension_dir = Path(
@@ -111,6 +114,7 @@ def load_config() -> Config:
         channel=channel,
         switchboard_extension_dir=switchboard_extension_dir,
         multica_extension_dir=multica_extension_dir,
+        download_dir=download_dir,
         chatgpt_extension_dir=chatgpt_extension_dir,
         extension_token=extension_token,
         browser_extension_dir=browser_extension_dir,

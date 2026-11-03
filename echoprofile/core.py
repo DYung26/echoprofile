@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -22,6 +24,55 @@ _CHATGPT_API_TIMEOUT_S = 15 * 60
 
 _PROFILE_UNLOCK_TIMEOUT_S = 5.0
 _PROFILE_UNLOCK_POLL_INTERVAL_S = 0.1
+_LOGGER = logging.getLogger(__name__)
+_DOWNLOAD_SAVE_LOCK = asyncio.Lock()
+_INVALID_WINDOWS_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
+def _safe_download_filename(filename: str) -> str:
+    """Normalize a suggested download name into a safe, portable filename."""
+    name = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    name = _INVALID_WINDOWS_FILENAME_CHARS.sub("_", name).strip().rstrip(". ")
+    if not name or name in {".", ".."}:
+        name = "download"
+    if name.split(".", 1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+        name = f"_{name}"
+    return name
+
+
+async def _save_download(download: Any, download_dir: Path, lock: asyncio.Lock) -> Path:
+    """Persist a Playwright download outside its temporary context directory."""
+    suggested = _safe_download_filename(download.suggested_filename or "download")
+    download_dir.mkdir(parents=True, exist_ok=True)
+    async with lock:
+        target = download_dir / suggested
+        stem, suffix = target.stem, target.suffix
+        index = 1
+        while target.exists():
+            target = download_dir / f"{stem} ({index}){suffix}"
+            index += 1
+        await download.save_as(str(target))
+    _LOGGER.info("Saved browser download to %s", target)
+    return target
+
+
+def _attach_download_handler(context: BrowserContext, download_dir: Path) -> None:
+    async def save_download(download: Any) -> None:
+        try:
+            await _save_download(download, download_dir, _DOWNLOAD_SAVE_LOCK)
+        except Exception:
+            _LOGGER.exception(
+                "Could not save browser download %r to %s",
+                download.suggested_filename,
+                download_dir,
+            )
+
+    context.on("download", save_download)
 
 
 def _extension_args(
@@ -198,6 +249,7 @@ async def launch_persistent_profile(
         color_scheme="dark",
         accept_downloads=True,
     )
+    _attach_download_handler(context, config.download_dir)
     return playwright, context
 
 
@@ -684,6 +736,7 @@ class CloneManager:
                 color_scheme="dark",
                 accept_downloads=True,
             )
+            _attach_download_handler(context, self._config.download_dir)
             page = await context.new_page()
             await page.goto(target_url)
 
