@@ -8,6 +8,13 @@ from pydantic import BaseModel, Field
 
 from echoprofile.config import Config, load_config
 from echoprofile.core import CloneManager
+from echoprofile.routing import (
+    DEVICE_URLS,
+    automatic_fallback_enabled,
+    candidate_urls,
+    resolve_base_url,
+    selected_device,
+)
 
 
 class CloneRequest(BaseModel):
@@ -65,6 +72,25 @@ def create_app(config: Config | None = None) -> FastAPI:
             )
         except KeyError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/routing/resolve")
+    async def routing_resolve():
+        try:
+            base_url = resolve_base_url(config)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
+        resolved_device = next(
+            (name for name, url in DEVICE_URLS.items() if url == base_url),
+            "local" if base_url == config.base_url else "custom",
+        )
+        return {
+            "base_url": base_url,
+            "selected_device": selected_device(),
+            "resolved_device": resolved_device,
+            "auto_fallback_enabled": automatic_fallback_enabled(),
+            "candidate_urls": candidate_urls(config),
+        }
 
     @app.post("/browser/action")
     async def browser_action(request: BrowserActionRequest):

@@ -259,3 +259,8 @@ Override its endpoint order with comma-separated `ECHOPROFILE_FAILOVER_URLS`, fo
 
 Device selection chooses the server receiving a command; it does not migrate
 existing browser windows, cookies, or clones between machines.
+
+
+## HTTP routing resolver
+
+GET /routing/resolve returns the base URL selected by EchoProfile's persisted device choice and automatic-fallback configuration. Clients such as AiSP should query this local control-plane endpoint, then send browser actions to the returned base_url instead of maintaining their own device URL setting.
