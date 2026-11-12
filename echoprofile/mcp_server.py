@@ -10,7 +10,7 @@ import httpx
 from echoprofile.config import load_config
 
 
-SERVER_NAME = "echoprofile-browser"
+SERVER_NAME = "echoprofile-extension"
 SERVER_VERSION = "0.1.0"
 PROTOCOL_VERSION = "2024-11-05"
 

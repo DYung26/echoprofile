@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 echoprofile = "echoprofile.cli:main"
+echoprofile-extension-mcp = "echoprofile.mcp_server:main"
 echoprofile-mcp = "echoprofile.mcp_server:main"
 
 [build-system]
