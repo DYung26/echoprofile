@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "EchoProfile Browser Control",
+  "name": "EchoProfile Browser Extension",
   "version": "0.1.0",
-  "description": "Independent browser-control bridge for EchoProfile.",
+  "description": "Connects this browser to the local EchoProfile service for independent extension-backed control.",
   "permissions": [
     "tabs",
     "activeTab",
@@ -22,7 +22,7 @@
   },
   "options_page": "options.html",
   "action": {
-    "default_title": "EchoProfile Browser Control"
+    "default_title": "EchoProfile Browser Extension"
   },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuchJYpuRRXsBi3NeBOU5cKubY7uroiZuBZaz/1Hc8c04boYizdRNXQur8J7+uHLxFwE15ckSvFEcs3jQSb54OuTSGLx9WyjpwcpJO+3bWLbQsIWKP95339A+BCwupB0SDhS95cMTrrNu/3b4cUWR3nHMMWK4TXeSsWI1PBgCg2MxwkXT+dyYeBgKZqErVXCywlzp3LSvLmP3prYoNfBL4EsFFqgn5n/kQq2Pmb5Ia7CI1icamqmRvWOIW/UPS4qxYVjzAeAWvcuXiLAuQo2RrXmIoFp8wegCnZ5jG/FXinkw0/xI12ng5FclHvj7stK/1okxRosrj7/LtFVH1k9+3QIDAQAB",
   "content_security_policy": {
