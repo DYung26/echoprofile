@@ -1,11 +1,11 @@
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 from fastapi.testclient import TestClient
 
 from echoprofile.config import Config
-from echoprofile.server import create_app
+from echoprofile.server import _bind_server_sockets, create_app
 
 
 class RoutingEndpointTests(unittest.TestCase):
@@ -40,6 +40,28 @@ class RoutingEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["detail"], "unknown device")
+
+
+class ServerSocketBindingTests(unittest.TestCase):
+    def test_bind_loopback_adds_local_listener_without_wildcard_binding(self):
+        sockets = [MagicMock(), MagicMock()]
+        with patch("socket.socket", side_effect=sockets):
+            result = _bind_server_sockets("100.82.234.105", 8756, bind_loopback=True)
+
+        self.assertEqual(result, sockets)
+        self.assertEqual(sockets[0].bind.call_args, call(("100.82.234.105", 8756)))
+        self.assertEqual(sockets[1].bind.call_args, call(("127.0.0.1", 8756)))
+        for server_socket in sockets:
+            server_socket.listen.assert_called_once_with(2048)
+            server_socket.setblocking.assert_called_once_with(False)
+
+    def test_bind_loopback_does_not_duplicate_loopback_listener(self):
+        server_socket = MagicMock()
+        with patch("socket.socket", return_value=server_socket):
+            result = _bind_server_sockets("127.0.0.1", 8756, bind_loopback=True)
+
+        self.assertEqual(result, [server_socket])
+        server_socket.bind.assert_called_once_with(("127.0.0.1", 8756))
 
 
 if __name__ == "__main__":

@@ -187,15 +187,15 @@ On first use, EchoProfile creates a random pairing token at `~/.config/echoprofi
 
 ### EchoProfile MCP server
 
-EchoProfile includes a dedicated stdio MCP server for the extension-backed browser. It is an independent control mechanism from the Playwright/CDP browser tools: MCP calls the EchoProfile HTTP API, which relays the action to the paired extension over its WebSocket.
+EchoProfile includes a dedicated stdio MCP server named `echoprofile-extension` (command: `echoprofile-extension-mcp`) for the extension-backed browser. The old `echoprofile-mcp` command remains as a compatibility alias. It is an independent control mechanism from the Playwright/CDP browser tools: MCP calls the EchoProfile HTTP API, which relays the action to the paired extension over its WebSocket.
 
 Install EchoProfile in the environment used by your MCP client, then register this server:
 
 ```json
 {
   "mcpServers": {
-    "echoprofile-browser": {
-      "command": "echoprofile-mcp"
+    "echoprofile-extension": {
+      "command": "echoprofile-extension-mcp"
     }
   }
 }
@@ -231,6 +231,7 @@ All optional; override with env vars.
 | --- | --- |
 | `ECHOPROFILE_PROFILE_DIR` | `~/.local/share/echoprofile/edge-profile` |
 | `ECHOPROFILE_HOST` | `127.0.0.1` |
+| `ECHOPROFILE_BIND_LOOPBACK` | unset. Set to `1` to add a loopback listener alongside a specific non-loopback host binding. |
 | `ECHOPROFILE_PORT` | `8756` |
 | `ECHOPROFILE_DEFAULT_URL` | `about:blank` |
 | `ECHOPROFILE_CHANNEL` | unset (bundled Chromium). `msedge` for native Edge. |

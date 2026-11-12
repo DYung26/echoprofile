@@ -307,6 +307,29 @@ def create_app(config: Config | None = None) -> FastAPI:
     return app
 
 
+def _bind_server_sockets(host: str, port: int, *, bind_loopback: bool):
+    import socket
+
+    addresses = [host]
+    if bind_loopback and host not in {"0.0.0.0", "127.0.0.1", "localhost"}:
+        addresses.append("127.0.0.1")
+
+    sockets = []
+    try:
+        for address in addresses:
+            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind((address, port))
+            server_socket.listen(2048)
+            server_socket.setblocking(False)
+            sockets.append(server_socket)
+    except OSError:
+        for server_socket in sockets:
+            server_socket.close()
+        raise
+    return sockets
+
+
 def run() -> None:
     import os
     import sys
@@ -351,4 +374,10 @@ def run() -> None:
             import asyncio
 
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        uvicorn.run(create_app(config), host=config.host, port=config.port)
+        bind_loopback = os.environ.get("ECHOPROFILE_BIND_LOOPBACK", "").strip().lower() in {"1", "true", "yes", "on"}
+        if bind_loopback:
+            sockets = _bind_server_sockets(config.host, config.port, bind_loopback=True)
+            server = uvicorn.Server(uvicorn.Config(create_app(config), host=config.host, port=config.port))
+            server.run(sockets=sockets)
+        else:
+            uvicorn.run(create_app(config), host=config.host, port=config.port)
