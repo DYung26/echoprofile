@@ -25,7 +25,7 @@ MAESTRO_PROFILE_DIR = Path.home() / ".local" / "share" / "maestro" / "browser-pr
 # for the extension itself.
 SWITCHBOARD_EXTENSION_DIR = Path.home() / "Projects" / "switchboard" / "dist"
 MULTICA_EXTENSION_DIR = Path.home() / "Projects" / "multica-web-runtime" / "extension" / "dist"
-ECHOPROFILE_EXTENSION_DIR = Path(__file__).parent / "browser_extension"
+DEFAULT_BROWSER_EXTENSION_DIR = Path(__file__).parent / "browser_extension"
 
 # Playwright `channel` value for launches. None means "use Playwright's
 # bundled Chromium" (no channel= passed at all) - this is what we use by
@@ -72,7 +72,7 @@ class Config:
     multica_extension_dir: Path | None = None
     chatgpt_extension_dir: Path | None = None
     extension_token: str = ""
-    browser_extension_dir: Path = ECHOPROFILE_EXTENSION_DIR
+    browser_extension_dir: Path = DEFAULT_BROWSER_EXTENSION_DIR
 
     @property
     def base_url(self) -> str:
@@ -93,6 +93,9 @@ def load_config() -> Config:
     multica_extension_dir = Path(multica_dir).expanduser() if not multica_disabled else None
     chatgpt_dir = os.environ.get("ECHOPROFILE_CHATGPT_EXTENSION_DIR", "").strip()
     chatgpt_extension_dir = Path(chatgpt_dir).expanduser() if chatgpt_dir else None
+    browser_extension_dir = Path(
+        os.environ.get("ECHOPROFILE_BROWSER_EXTENSION_DIR", DEFAULT_BROWSER_EXTENSION_DIR)
+    ).expanduser()
     extension_token = _load_or_create_extension_token()
     return Config(
         profile_dir=profile_dir,
@@ -104,5 +107,5 @@ def load_config() -> Config:
         multica_extension_dir=multica_extension_dir,
         chatgpt_extension_dir=chatgpt_extension_dir,
         extension_token=extension_token,
-        browser_extension_dir=ECHOPROFILE_EXTENSION_DIR,
+        browser_extension_dir=browser_extension_dir,
     )
