@@ -233,6 +233,7 @@ All optional; override with env vars.
 | `ECHOPROFILE_HOST` | `127.0.0.1` |
 | `ECHOPROFILE_BIND_LOOPBACK` | unset. Set to `1` to add a loopback listener alongside a specific non-loopback host binding. |
 | `ECHOPROFILE_BROWSER_EXTENSION_DIR` | Packaged `echoprofile/browser_extension` directory. Override to select an explicit unpacked EchoProfile extension directory. |
+| `ECHOPROFILE_EXTRA_EXTENSION_DIRS` | Empty. Optional additional unpacked extension directories, separated with the platform path separator (`:` on Linux, `;` on Windows). |
 | `ECHOPROFILE_PORT` | `8756` |
 | `ECHOPROFILE_DEFAULT_URL` | `about:blank` |
 | `ECHOPROFILE_CHANNEL` | unset (bundled Chromium). `msedge` for native Edge. |
