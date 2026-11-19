@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Spin up ephemeral, isolated Edge browser sessions cloned from one persistent logged-in profile."
 requires-python = ">=3.11"
 dependencies = [
-    "playwright>=1.45",
+    "playwright==1.62.0",
     "fastapi>=0.111",
     "uvicorn>=0.30",
     "websockets>=12",
