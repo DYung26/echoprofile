@@ -285,10 +285,14 @@ async def open_persistent_profile(
     )
 
 
-async def close_persistent_profile(playwright: Playwright, context: BrowserContext) -> None:
-    """Close a context/driver pair returned by open_persistent_profile."""
-    await context.close()
-    await playwright.stop()
+async def close_persistent_profile(playwright: Playwright | None, context: BrowserContext | None) -> None:
+    """Close a persistent context and its Playwright driver, tolerating an externally closed browser."""
+    try:
+        if context is not None and not context.is_closed():
+            await context.close()
+    finally:
+        if playwright is not None:
+            await playwright.stop()
 
 
 async def snapshot_storage_state(context: BrowserContext) -> dict[str, Any]:
@@ -402,7 +406,24 @@ class CloneManager:
 
     @property
     def persistent_open(self) -> bool:
-        return self._persistent_context is not None
+        context = self._persistent_context
+        if context is None:
+            return False
+        try:
+            return not context.is_closed()
+        except Exception:
+            return False
+
+    async def _discard_stale_persistent(self) -> None:
+        """Release stale Playwright references after the browser was closed outside EchoProfile."""
+        context, playwright = self._persistent_context, self._persistent_playwright
+        self._persistent_context = None
+        self._persistent_playwright = None
+        if context is not None or playwright is not None:
+            try:
+                await close_persistent_profile(playwright, context)
+            except Exception:
+                _LOGGER.debug("Error cleaning up stale persistent browser handles", exc_info=True)
 
     async def open_persistent(
         self,
@@ -420,8 +441,10 @@ class CloneManager:
         with different options (e.g. toggling load_switchboard).
         """
         async with self._persistent_lock:
-            if self._persistent_context is not None:
+            if self.persistent_open:
                 return
+            if self._persistent_context is not None or self._persistent_playwright is not None:
+                await self._discard_stale_persistent()
             playwright, context = await open_persistent_profile(
                 self._config,
                 load_switchboard=load_switchboard,
@@ -437,12 +460,9 @@ class CloneManager:
     async def close_persistent(self) -> bool:
         """Close the persistent profile if open. Returns whether it was open."""
         async with self._persistent_lock:
-            if self._persistent_context is None:
-                return False
-            await close_persistent_profile(self._persistent_playwright, self._persistent_context)
-            self._persistent_context = None
-            self._persistent_playwright = None
-            return True
+            was_open = self.persistent_open
+            await self._discard_stale_persistent()
+            return was_open
 
     async def browser_action(self, action: str, payload: dict[str, Any]) -> Any:
         """Execute a browser capability through an extension in the live context.

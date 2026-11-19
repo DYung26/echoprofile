@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import subprocess
 from pathlib import Path
 import sys
 
@@ -40,8 +41,12 @@ def cmd_login(args: argparse.Namespace) -> None:
     """
     config = load_config()
     base_url = resolve_base_url(config, getattr(args, 'device', None))
-    load_switchboard = not args.no_switchboard
-    load_multica = config.multica_extension_dir is not None
+    load_switchboard = not args.no_switchboard and config.switchboard_extension_dir is not None and (config.switchboard_extension_dir / "manifest.json").is_file()
+    load_multica = config.multica_extension_dir is not None and (config.multica_extension_dir / "manifest.json").is_file()
+    if not args.no_switchboard and not load_switchboard:
+        print(f"Optional Switchboard extension unavailable; skipping: {config.switchboard_extension_dir}")
+    if config.multica_extension_dir is not None and not load_multica:
+        print(f"Optional Multica extension unavailable; skipping: {config.multica_extension_dir}")
     load_chatgpt = args.chatgpt_extension
     extension_dirs = [Path(path).expanduser() for path in args.extension]
     print("Asking the server to open the persistent profile - this can take ")
@@ -221,12 +226,36 @@ def cmd_device(args: argparse.Namespace) -> None:
         print(f"{name:8} {status:7} {url}{marker}")
 
 
+
+def cmd_setup_browser(args: argparse.Namespace) -> None:
+    """Install the browser build paired with this pinned Playwright release."""
+    config = load_config()
+    browser = args.browser or ("msedge" if config.channel == "msedge" else "chromium")
+    if browser not in {"chromium", "msedge"}:
+        print(f"Unsupported browser target: {browser}")
+        sys.exit(2)
+    print(f"Installing {browser} for the installed Playwright version...")
+    result = subprocess.run([sys.executable, "-m", "playwright", "install", browser], check=False)
+    if result.returncode:
+        sys.exit(result.returncode)
+    from importlib.metadata import version
+    print(f"{browser} is installed and paired with Playwright {version('playwright')}." )
+
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="echoprofile")
     parser.add_argument(
         "--device", help="Target arch, laptop, vps, an explicit base URL, or auto for this command"
     )
     subparsers = parser.add_subparsers(required=True)
+
+    p_setup = subparsers.add_parser(
+        "setup-browser",
+        help="Install the browser binary paired with the pinned Playwright version",
+    )
+    p_setup.add_argument("--browser", choices=["chromium", "msedge"], help="Override the configured browser")
+    p_setup.set_defaults(func=cmd_setup_browser)
 
     p_device = subparsers.add_parser("device", help="Select a browser device or inspect device health")
     device_actions = p_device.add_subparsers(dest="device_action", required=True)
