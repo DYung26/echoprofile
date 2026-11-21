@@ -106,8 +106,12 @@ def handle(message: dict[str, Any]) -> dict[str, Any] | None:
     if method == "notifications/initialized" or method.startswith("notifications/"):
         return None
     if method == "initialize":
+        requested_version = params.get("protocolVersion")
+        negotiated_version = (
+            requested_version if requested_version == PROTOCOL_VERSION else PROTOCOL_VERSION
+        )
         return _response(request_id, {
-            "protocolVersion": params.get("protocolVersion", PROTOCOL_VERSION),
+            "protocolVersion": negotiated_version,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
         })

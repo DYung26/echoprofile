@@ -10,6 +10,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from echoprofile.mcp_server import SERVER_NAME, handle
 
@@ -20,6 +21,29 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 def _allowed_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     raw = os.environ.get("ECHOPROFILE_MCP_HTTP_ALLOWED_CLIENTS", "172.20.0.0/16,127.0.0.1/32,::1/128")
     return [ipaddress.ip_network(item.strip(), strict=False) for item in raw.split(",") if item.strip()]
+
+
+def _allowed_origins() -> set[str]:
+    raw = os.environ.get("ECHOPROFILE_MCP_HTTP_ALLOWED_ORIGINS", "")
+    return {origin.strip() for origin in raw.split(",") if origin.strip()}
+
+
+def _authorized_origin(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    return origin in _allowed_origins()
+
+
+def _supported_protocol_version() -> str:
+    from echoprofile.mcp_server import PROTOCOL_VERSION
+
+    return PROTOCOL_VERSION
+
+
+def _valid_protocol_header(request: Request) -> bool:
+    version = request.headers.get("mcp-protocol-version")
+    return version is None or version == _supported_protocol_version()
 
 
 def _authorized(request: Request) -> bool:
@@ -74,20 +98,29 @@ async def health() -> dict[str, str]:
 
 @app.post("/mcp")
 async def mcp_post(request: Request) -> Response:
-    if not _authorized(request):
+    if not _authorized(request) or not _authorized_origin(request):
         return Response(status_code=403)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type != "application/json":
+        return Response(status_code=415)
+    if not _valid_protocol_header(request):
+        return Response(status_code=400)
     try:
         payload = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
         return JSONResponse(_invalid_request(), status_code=400)
 
     if isinstance(payload, list):
-        responses = [response for item in payload if (response := _process(item)) is not None]
+        responses = [
+            response
+            for item in payload
+            if (response := await run_in_threadpool(_process, item)) is not None
+        ]
         if not responses:
             return Response(status_code=202)
         return JSONResponse(responses, headers={"Cache-Control": "no-cache, no-transform"})
 
-    response = _process(payload)
+    response = await run_in_threadpool(_process, payload)
     if response is None:
         return Response(status_code=202)
     return JSONResponse(response, headers={"Cache-Control": "no-cache, no-transform"})
