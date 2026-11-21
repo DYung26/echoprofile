@@ -201,9 +201,17 @@ Install EchoProfile in the environment used by your MCP client, then register th
 }
 ```
 
-The MCP process reads the same local pairing-token file and host/port configuration as the API server, so no separate token or endpoint configuration is needed. By default, it connects to `http://127.0.0.1:8756`; the extension endpoint is fixed to that local address. The tools expose browser status, tab management, navigation, page title/text/HTML, click, fill, keypress, scrolling, and screenshots. Start `echoprofile serve` and open the persistent `login` profile; once the extension is loaded, pairing happens automatically.
+The stdio MCP process reads the same local pairing-token file and host/port configuration as the API server. It remains available for local MCP clients that launch the command directly.
 
-Supported extension actions currently include `status`, `tabs.list`, `tabs.active`, `tabs.new`, `tabs.close`, `tabs.activate`, `navigate`, `page.title`, `page.text`, `page.html`, `page.click`, `page.fill`, `page.press`, `page.scroll`, and `page.screenshot`.
+#### Streamable HTTP transport and service
+
+The package also provides echoprofile-extension-mcp-http, exposing the same tools through a stateless JSON-RPC endpoint at /mcp. The deployed MetaMCP bridge uses this HTTP transport on 172.17.0.1:8757; MetaMCP containers connect through host.docker.internal:8757.
+
+The replacement user unit is provided at systemd/user/echoprofile-extension-mcp.service. It starts after and requires echoprofile.service, binds only to the Docker host-gateway address (172.17.0.1:8757), and restricts clients to the MetaMCP Docker network (172.20.0.0/16) and loopback. Requests carrying an Origin header are rejected unless the exact origin is listed in ECHOPROFILE_MCP_HTTP_ALLOWED_ORIGINS; the default is to allow no browser origins. Requests must use application/json. The transport negotiates the only protocol version currently implemented (2024-11-05), rejects unsupported MCP-Protocol-Version headers, and dispatches synchronous browser actions to a worker thread so slow extension calls do not block health checks or other MCP requests.
+
+The current deployment still has the older system-level unit installed; after merging this change, run scripts/migrate-extension-mcp-service.sh from the main EchoProfile checkout. It backs up and disables the old system unit before enabling the project-owned user unit. This is a migration of the existing bridge, not an additional listener or duplicate service.
+
+Keep the HTTP bridge as the single MetaMCP registration. The stdio command remains a separate option for clients that explicitly launch it; do not register both transports for the same agent/browser. The HTTP listener must not be exposed publicly.
 
 EchoProfile can also load multiple additional unpacked Chromium extensions into the same persistent profile. Chromium starts each extension in the browser process; extension service workers/background pages and content scripts then run under the extension's own permissions and lifecycle. An extension is not automatically a Playwright controller: EchoProfile must speak the extension's documented messaging/API bridge if it wants to ask that extension to perform actions.
 

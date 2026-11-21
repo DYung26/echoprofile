@@ -21,6 +21,21 @@ class McpProtocolTests(unittest.TestCase):
         call_api.assert_called_once_with("tabs.list", {})
         self.assertFalse(response["result"]["isError"])
 
+
+    @patch.object(mcp_server, "_tool_call", side_effect=RuntimeError("private path /home/dyung/secret"))
+    def test_tool_errors_are_logged_but_not_returned(self, _tool_call):
+        with self.assertLogs(mcp_server.LOGGER, level="ERROR") as captured:
+            response = mcp_server.handle({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {"name": "tabs_list", "arguments": {}},
+            })
+        error_text = response["result"]["content"][0]["text"]
+        self.assertEqual(error_text, "Tool execution failed. Check EchoProfile server logs.")
+        self.assertNotIn("/home/dyung/secret", error_text)
+        self.assertIn("/home/dyung/secret", "\n".join(captured.output))
+
     def test_notification_has_no_response(self):
         self.assertIsNone(mcp_server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
 
