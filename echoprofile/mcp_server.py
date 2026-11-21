@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from typing import Any
 
@@ -9,6 +10,7 @@ import httpx
 
 from echoprofile.config import load_config
 
+LOGGER = logging.getLogger(__name__)
 
 SERVER_NAME = "echoprofile-extension"
 SERVER_VERSION = "0.1.0"
@@ -119,8 +121,20 @@ def handle(message: dict[str, Any]) -> dict[str, Any] | None:
         try:
             content = _tool_call(name, arguments)
             return _response(request_id, {"content": content, "isError": False})
-        except Exception as error:
-            return _response(request_id, {"content": [{"type": "text", "text": str(error)}], "isError": True})
+        except Exception:
+            LOGGER.exception("EchoProfile MCP tool call failed (tool=%s)", name)
+            return _response(
+                request_id,
+                {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Tool execution failed. Check EchoProfile server logs.",
+                        }
+                    ],
+                    "isError": True,
+                },
+            )
     if method == "resources/list":
         return _response(request_id, {"resources": []})
     return _error(request_id, -32601, f"Method not found: {method}") if request_id is not None else None
@@ -132,10 +146,11 @@ def main() -> None:
         try:
             message = json.loads(line)
             if not isinstance(message, dict):
-                raise ValueError("JSON-RPC message must be an object")
+                raise TypeError("JSON-RPC message must be an object")
             response = handle(message)
-        except Exception as error:
-            response = _error(None, -32700, str(error))
+        except Exception:
+            LOGGER.exception("Invalid EchoProfile MCP stdio request")
+            response = _error(None, -32700, "Invalid JSON-RPC request")
         if response is not None:
             sys.stdout.write(json.dumps(response, separators=(",", ":"), ensure_ascii=False) + "\n")
             sys.stdout.flush()

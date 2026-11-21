@@ -34,3 +34,42 @@ def test_mcp_http_initialize_and_list_tools():
 def test_mcp_http_notifications_return_accepted():
     response = request(mcp_http.app, "POST", {"jsonrpc": "2.0", "method": "notifications/initialized"})
     assert response.status_code == 202
+
+
+def test_mcp_http_sanitizes_tool_error_payload(monkeypatch):
+    monkeypatch.setattr(
+        mcp_http,
+        "handle",
+        lambda message: {
+            "jsonrpc": "2.0",
+            "id": message.get("id"),
+            "result": {
+                "isError": True,
+                "content": [{"type": "text", "text": "Traceback: private path /home/dyung/secret"}],
+            },
+        },
+    )
+    response = request(
+        mcp_http.app,
+        "POST",
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call"},
+    )
+    assert response.status_code == 200
+    error_text = response.json()["result"]["content"][0]["text"]
+    assert error_text == "Tool execution failed. Check EchoProfile server logs."
+    assert "/home/dyung/secret" not in response.text
+
+
+def test_mcp_http_sanitizes_unexpected_handler_exceptions(monkeypatch):
+    def fail(_message):
+        raise RuntimeError("private path /home/dyung/secret")
+
+    monkeypatch.setattr(mcp_http, "handle", fail)
+    response = request(
+        mcp_http.app,
+        "POST",
+        {"jsonrpc": "2.0", "id": 4, "method": "initialize"},
+    )
+    assert response.status_code == 200
+    assert response.json()["error"]["message"] == "Internal MCP server error"
+    assert "/home/dyung/secret" not in response.text

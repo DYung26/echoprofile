@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import os
 from typing import Any
 
@@ -12,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from echoprofile.mcp_server import SERVER_NAME, handle
 
+LOGGER = logging.getLogger(__name__)
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
@@ -39,7 +41,30 @@ def _invalid_request(request_id: Any = None) -> dict[str, Any]:
 def _process(message: Any) -> dict[str, Any] | None:
     if not isinstance(message, dict):
         return _invalid_request()
-    return handle(message)
+    try:
+        response = handle(message)
+    except Exception:
+        LOGGER.exception("Unhandled exception while processing EchoProfile MCP request")
+        return {
+            "jsonrpc": "2.0",
+            "id": message.get("id"),
+            "error": {"code": -32603, "message": "Internal MCP server error"},
+        }
+    if response is None:
+        return None
+    result = response.get("result")
+    if isinstance(result, dict) and result.get("isError") is True:
+        safe_response = dict(response)
+        safe_result = dict(result)
+        safe_result["content"] = [
+            {
+                "type": "text",
+                "text": "Tool execution failed. Check EchoProfile server logs.",
+            }
+        ]
+        safe_response["result"] = safe_result
+        return safe_response
+    return response
 
 
 @app.get("/health")
