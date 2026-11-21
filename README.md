@@ -201,9 +201,17 @@ Install EchoProfile in the environment used by your MCP client, then register th
 }
 ```
 
-The MCP process reads the same local pairing-token file and host/port configuration as the API server, so no separate token or endpoint configuration is needed. By default, it connects to `http://127.0.0.1:8756`; the extension endpoint is fixed to that local address. The tools expose browser status, tab management, navigation, page title/text/HTML, click, fill, keypress, scrolling, and screenshots. Start `echoprofile serve` and open the persistent `login` profile; once the extension is loaded, pairing happens automatically.
+The stdio MCP process reads the same local pairing-token file and host/port configuration as the API server, so no separate token or endpoint configuration is needed. It remains the default transport and is what MetaMCP currently launches.
 
-Supported extension actions currently include `status`, `tabs.list`, `tabs.active`, `tabs.new`, `tabs.close`, `tabs.activate`, `navigate`, `page.title`, `page.text`, `page.html`, `page.click`, `page.fill`, `page.press`, `page.scroll`, and `page.screenshot`.
+#### Optional private Streamable HTTP transport
+
+The package also provides echoprofile-extension-mcp-http, exposing the same tools through a stateless JSON-RPC endpoint at /mcp. It defaults to 127.0.0.1:8757.
+
+A user service template is provided at systemd/user/echoprofile-extension-mcp-http.service. It binds only to the MetaMCP Docker bridge gateway (172.20.0.1:8757) and accepts clients from 172.20.0.0/16 plus loopback. The MetaMCP container currently uses that network. The service requires echoprofile.service and is intentionally not installed or enabled by default.
+
+The HTTP transport is optional and independent of the stdio process. Do not run both transports for the same MetaMCP registration. Keep stdio configured unless MetaMCP is deliberately switched to the HTTP endpoint; if switched, install the updated EchoProfile package, enable this unit, and configure MetaMCP to connect to http://172.20.0.1:8757/mcp. Do not expose this listener publicly.
+
+Supported extension actions include browser status, tab management, navigation, page title/text/HTML, click, fill, keypress, scrolling, and screenshots.
 
 EchoProfile can also load multiple additional unpacked Chromium extensions into the same persistent profile. Chromium starts each extension in the browser process; extension service workers/background pages and content scripts then run under the extension's own permissions and lifecycle. An extension is not automatically a Playwright controller: EchoProfile must speak the extension's documented messaging/API bridge if it wants to ask that extension to perform actions.
 

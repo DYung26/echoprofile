@@ -1,0 +1,33 @@
+[Unit]
+Description=EchoProfile extension MCP HTTP transport for private Docker clients
+Requires=echoprofile.service
+After=network-online.target echoprofile.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/dotfiles/systemd/systemd.env.common
+EnvironmentFile=%h/.config/dotfiles/systemd/systemd.env
+Environment=ECHOPROFILE_MCP_HTTP_HOST=172.20.0.1
+Environment=ECHOPROFILE_MCP_HTTP_PORT=8757
+Environment=ECHOPROFILE_MCP_HTTP_ALLOWED_CLIENTS=172.20.0.0/16,127.0.0.1/32,::1/128
+ExecStart=%h/.local/bin/uv run --project %h/Projects/echoprofile --no-sync python -m echoprofile.mcp_http
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=default.target
