@@ -1,20 +1,25 @@
 [Unit]
-Description=EchoProfile extension MCP HTTP transport for private Docker clients
+Description=EchoProfile browser extension MCP HTTP bridge
 Requires=echoprofile.service
 After=network-online.target echoprofile.service
 Wants=network-online.target
 
 [Service]
 Type=simple
+WorkingDirectory=%h/Projects/echoprofile
 EnvironmentFile=%h/.config/dotfiles/systemd/systemd.env.common
 EnvironmentFile=%h/.config/dotfiles/systemd/systemd.env
-Environment=ECHOPROFILE_MCP_HTTP_HOST=172.20.0.1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=ECHOPROFILE_MCP_HTTP_HOST=172.17.0.1
 Environment=ECHOPROFILE_MCP_HTTP_PORT=8757
 Environment=ECHOPROFILE_MCP_HTTP_ALLOWED_CLIENTS=172.20.0.0/16,127.0.0.1/32,::1/128
-ExecStart=%h/.local/bin/uv run --project %h/Projects/echoprofile --no-sync python -m echoprofile.mcp_http
+ExecStartPre=/usr/bin/test -r %h/.config/echoprofile/extension-token
+ExecStart=%h/Projects/echoprofile/.venv/bin/python -m echoprofile.mcp_http
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=30
+TimeoutStopSec=15
+KillMode=mixed
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

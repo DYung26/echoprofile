@@ -201,17 +201,15 @@ Install EchoProfile in the environment used by your MCP client, then register th
 }
 ```
 
-The stdio MCP process reads the same local pairing-token file and host/port configuration as the API server, so no separate token or endpoint configuration is needed. It remains the default transport and is what MetaMCP currently launches.
+The stdio MCP process reads the same local pairing-token file and host/port configuration as the API server. It remains available for local MCP clients that launch the command directly.
 
-#### Optional private Streamable HTTP transport
+#### Streamable HTTP transport and service
 
-The package also provides echoprofile-extension-mcp-http, exposing the same tools through a stateless JSON-RPC endpoint at /mcp. It defaults to 127.0.0.1:8757.
+The package also provides echoprofile-extension-mcp-http, exposing the same tools through a stateless JSON-RPC endpoint at /mcp. The deployed MetaMCP bridge uses this HTTP transport on 172.17.0.1:8757; MetaMCP containers connect through host.docker.internal:8757.
 
-A user service template is provided at systemd/user/echoprofile-extension-mcp-http.service. It binds only to the MetaMCP Docker bridge gateway (172.20.0.1:8757) and accepts clients from 172.20.0.0/16 plus loopback. The MetaMCP container currently uses that network. The service requires echoprofile.service and is intentionally not installed or enabled by default.
+The replacement user unit is provided at systemd/user/echoprofile-extension-mcp.service. It starts after and requires echoprofile.service, binds only to the Docker host-gateway address (172.17.0.1:8757), and restricts clients to the MetaMCP Docker network (172.20.0.0/16) and loopback. The current deployment still has the older system-level unit installed; after merging this change, run scripts/migrate-extension-mcp-service.sh from the main EchoProfile checkout. It backs up and disables the old system unit before enabling the project-owned user unit. This is a migration of the existing bridge, not an additional listener or duplicate service.
 
-The HTTP transport is optional and independent of the stdio process. Do not run both transports for the same MetaMCP registration. Keep stdio configured unless MetaMCP is deliberately switched to the HTTP endpoint; if switched, install the updated EchoProfile package, enable this unit, and configure MetaMCP to connect to http://172.20.0.1:8757/mcp. Do not expose this listener publicly.
-
-Supported extension actions include browser status, tab management, navigation, page title/text/HTML, click, fill, keypress, scrolling, and screenshots.
+Keep the HTTP bridge as the single MetaMCP registration. The stdio command remains a separate option for clients that explicitly launch it; do not register both transports for the same agent/browser. The HTTP listener must not be exposed publicly.
 
 EchoProfile can also load multiple additional unpacked Chromium extensions into the same persistent profile. Chromium starts each extension in the browser process; extension service workers/background pages and content scripts then run under the extension's own permissions and lifecycle. An extension is not automatically a Playwright controller: EchoProfile must speak the extension's documented messaging/API bridge if it wants to ask that extension to perform actions.
 
