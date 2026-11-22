@@ -17,14 +17,19 @@ class BrowserExtensionConfigTests(unittest.TestCase):
             config = load_config()
         self.assertEqual(config.browser_extension_dir, DEFAULT_BROWSER_EXTENSION_DIR)
 
-    def test_extra_extension_dirs_are_split_using_platform_path_separator(self) -> None:
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second, patch.dict(
-            os.environ,
-            {"ECHOPROFILE_EXTRA_EXTENSION_DIRS": os.pathsep.join([first, second])},
-            clear=True,
+    def test_playwright_extension_dir_is_optional(self) -> None:
+        with patch.dict(os.environ, {}, clear=True), patch(
+            "echoprofile.config._load_or_create_extension_token", return_value="test-token"
+        ):
+            config = load_config()
+        self.assertIsNone(config.playwright_extension_dir)
+
+    def test_playwright_extension_dir_can_be_overridden_explicitly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"ECHOPROFILE_PLAYWRIGHT_EXTENSION_DIR": directory}, clear=True
         ), patch("echoprofile.config._load_or_create_extension_token", return_value="test-token"):
             config = load_config()
-        self.assertEqual(config.extra_extension_dirs, [Path(first), Path(second)])
+        self.assertEqual(config.playwright_extension_dir, Path(directory))
 
     def test_browser_extension_dir_can_be_overridden_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(

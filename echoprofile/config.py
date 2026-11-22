@@ -75,7 +75,7 @@ class Config:
     chatgpt_extension_dir: Path | None = None
     extension_token: str = ""
     browser_extension_dir: Path = DEFAULT_BROWSER_EXTENSION_DIR
-    extra_extension_dirs: list[Path] | None = None
+    playwright_extension_dir: Path | None = None
 
     @property
     def base_url(self) -> str:
@@ -100,11 +100,8 @@ def load_config() -> Config:
     browser_extension_dir = Path(
         os.environ.get("ECHOPROFILE_BROWSER_EXTENSION_DIR", DEFAULT_BROWSER_EXTENSION_DIR)
     ).expanduser()
-    extra_extension_dirs = [
-        Path(item).expanduser()
-        for item in os.environ.get("ECHOPROFILE_EXTRA_EXTENSION_DIRS", "").split(os.pathsep)
-        if item.strip()
-    ]
+    playwright_dir = os.environ.get("ECHOPROFILE_PLAYWRIGHT_EXTENSION_DIR", "").strip()
+    playwright_extension_dir = Path(playwright_dir).expanduser() if playwright_dir else None
     extension_token = _load_or_create_extension_token()
     return Config(
         profile_dir=profile_dir,
@@ -118,5 +115,5 @@ def load_config() -> Config:
         chatgpt_extension_dir=chatgpt_extension_dir,
         extension_token=extension_token,
         browser_extension_dir=browser_extension_dir,
-        extra_extension_dirs=extra_extension_dirs,
+        playwright_extension_dir=playwright_extension_dir,
     )
