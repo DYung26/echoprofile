@@ -92,7 +92,8 @@ def _extension_args(
     is an opt-in mode for deterministic, allow-listed launches.
     """
     selected: list[Path] = []
-    selected.extend(_require_extension_dir(path, "Extra") for path in (config.extra_extension_dirs or []))
+    if config.playwright_extension_dir is not None:
+        selected.append(_require_extension_dir(config.playwright_extension_dir, "Playwright"))
     if load_echoprofile:
         selected.append(_require_extension_dir(config.browser_extension_dir, "EchoProfile Browser Control"))
     if load_switchboard:

@@ -80,6 +80,26 @@ class ExtensionArgsTests(unittest.TestCase):
             args = _extension_args(config, load_switchboard=False, load_multica=False)
             self.assertEqual(args, [f"--load-extension={extension.resolve()}"])
 
+    def test_playwright_extension_is_loaded_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            playwright = self.make_extension(root / "playwright")
+            config = Config(
+                profile_dir=root / "profile",
+                host="127.0.0.1",
+                port=8756,
+                default_url="about:blank",
+                switchboard_extension_dir=root / "switchboard",
+                multica_extension_dir=None,
+                playwright_extension_dir=playwright,
+            )
+
+            args = _extension_args(
+                config, load_switchboard=False, load_multica=False, load_echoprofile=False
+            )
+
+            self.assertEqual(args, [f"--load-extension={playwright.resolve()}"])
+
     def test_chatgpt_extension_path_is_configurable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, patch("echoprofile.config.EXTENSION_TOKEN_FILE", Path(temp_dir) / "token"), patch.dict(os.environ, {"ECHOPROFILE_CHATGPT_EXTENSION_DIR": "~/Extensions/chatgpt"}, clear=True):
             config = load_config()
